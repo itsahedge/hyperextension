@@ -11,7 +11,7 @@ Personal Hyperliquid trading extension for Chrome. Single user, no backend: the 
 | Orders | Open orders and active TWAPs, order history with status filters, market filter, cancel one / all / by market |
 | Wallet | Perp and spot balances, USDC deposit from Arbitrum (CCTP), Unit deposit addresses, spot↔perp USDC transfer, withdraw to Arbitrum, Hyperliquid address |
 | Activity | Fills, funding payments (7 days), transfers and other ledger updates (30 days) |
-| Settings | Network, signing mode, passkeys, API wallet create/import, remove master key, lock, reset |
+| Settings | Network, signing mode, passkeys, withdrawal allowlist, WireGuard VPN, API wallet create/import, remove master key, lock, reset |
 
 The header shows the account, signing mode, and network, with a refresh button and **Lock**. Data polls on its own (account every 5s, markets every 10s, history every 30s) while the popup is open.
 
@@ -138,6 +138,35 @@ Open orders include stops and TP/SL; position TP/SL show as "Position" (Hyperliq
 Passkeys unlock the vault through the WebAuthn PRF extension; they cannot sign Hyperliquid actions (Hyperliquid needs secp256k1, passkeys are P-256). The provider must support PRF: iCloud Keychain (macOS 15.4+) and Google Password Manager do.
 
 Chrome lets an extension use its own ID as the passkey RP ID, so the manifest pins the ID with a public `key` (`afafdoeghnoiaopgfhnipaldoekldgoo`). Without it, loading the unpacked build from another folder would change the ID and orphan enrolled passkeys; the password still unlocks in that case. The matching private key was not kept, so this build cannot be packed as a `.crx` with the same ID.
+
+## VPN (WireGuard)
+
+Chrome extensions cannot open UDP sockets, so the WireGuard tunnel runs in a small Go helper in `native/` that Chrome starts through native messaging. It runs wireguard-go on an in-process network stack (no system VPN, no Docker, no root) and serves a loopback CONNECT proxy; `chrome.proxy` sends only the extension's API hosts (its `host_permissions`) to it.
+
+```
+Settings > VPN: Turn on
+  -> PAC: routed hosts -> hx-vpn-blocked.invalid  (fail closed while connecting)
+  -> connectNative("hyperextension.vpn") -> hx-vpn: WireGuard up, exit IP checked
+     against the direct IP via ipinfo.io, CONNECT proxy on 127.0.0.1:<random>
+  -> PAC: routed hosts -> 127.0.0.1:<port>, everything else DIRECT
+helper exits / browser restarts -> routed hosts blocked until Reconnect or Turn off
+```
+
+Setup, once:
+
+```bash
+pnpm vpn:install   # builds native/ into ~/Library/Application Support/Hyperextension/hx-vpn
+                   # and registers it for this extension ID only, in every installed
+                   # Chrome and Brave (or pass one browser user-data-dir)
+```
+
+Then paste a wg-quick `.conf` (for example from your IVPN account) in Settings > VPN. It is sealed in the vault like the signing keys and sent to the helper only when connecting. Any IVPN WireGuard server can be picked from IVPN's public list; only the peer key and address change.
+
+- Kill switch: while the VPN is on but not connected, routed hosts are blocked rather than sent directly. Turning it off clears the proxy setting.
+- `chrome.proxy` is profile-wide: normal tabs visiting a routed host (for example `api.hyperliquid.xyz`) use the tunnel too.
+- The proxy only accepts CONNECT to the routed hosts on port 443, so other local processes cannot use it as a general tunnel.
+- If another extension controls Chrome's proxy settings, turning the VPN on fails with an error instead of silently going direct.
+- Go checks: `pnpm vpn:test` (build, vet, race tests including an in-process WireGuard peer, golangci-lint).
 
 ## No builder codes
 

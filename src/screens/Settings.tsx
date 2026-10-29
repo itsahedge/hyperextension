@@ -11,6 +11,7 @@ import { fmtTime, shortAddress } from "@/lib/format";
 import { updatePrefs } from "@/lib/prefs";
 import { addAllowed, MAX_LABEL, removeAllowed, type AllowedAddress } from "@/lib/withdraw";
 import { enrollPasskey, lock, removePasskey, updateConfig, updateVault, wipe, type Auth } from "@/lib/session";
+import { VpnCard } from "./settings/VpnCard";
 
 // Hyperliquid caps API wallet expiry at 180 days and names at 16 characters.
 const MAX_AGENT_DAYS = 180;
@@ -23,6 +24,7 @@ export function Settings() {
       <AccountCard />
       <PasskeyCard />
       <WithdrawAllowlistCard />
+      <VpnCard />
       <AgentCard />
       <SecurityCard />
     </div>

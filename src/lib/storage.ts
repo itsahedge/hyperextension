@@ -1,6 +1,7 @@
 import { storage } from "#imports";
 import type { AccountConfig } from "./account";
 import type { Secrets, StoredVault } from "./vault";
+import type { VpnSettings } from "./vpn";
 
 // Unlocked view: the config the popup acts on travels with the keys in one
 // item, so a mode switch and its key land in a single write. Local and
@@ -30,6 +31,10 @@ export const lastActiveItem = storage.defineItem<number>("session:lastActive");
 
 // Starred market coins per network; read through lib/favorites.
 export const favoritesItem = storage.defineItem<Partial<Record<"mainnet" | "testnet", string[]>>>("local:favorites");
+
+// Whether the VPN should be on and which server; the WireGuard config itself
+// is sealed in the vault.
+export const vpnItem = storage.defineItem<VpnSettings>("local:vpn", { fallback: { enabled: false } });
 
 export const vaultItem = storage.defineItem<StoredVault>("local:vault");
 export const configItem = storage.defineItem<AccountConfig>("local:config");

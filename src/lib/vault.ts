@@ -7,6 +7,8 @@ export interface Secrets {
   masterKey?: Hex;
   agentKey?: Hex;
   withdrawAllowlist?: AllowedAddress[];
+  // wg-quick .conf for the VPN (contains the WireGuard private key).
+  vpnConf?: string;
 }
 
 // Envelope layout (v2):

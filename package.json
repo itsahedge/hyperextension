@@ -10,6 +10,8 @@
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "vpn:install": "bash scripts/install-vpn-host.sh",
+    "vpn:test": "cd native && go build ./... && go vet ./... && go test -race -shuffle=on ./... && golangci-lint run --timeout 5m",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
