@@ -238,6 +238,53 @@ describe("mode switches are never observed half-applied", () => {
   });
 });
 
+describe("withdrawal allowlist in the vault", () => {
+  const COLD = "0x2222222222222222222222222222222222222222" as const;
+  const add = (s: { withdrawAllowlist?: unknown[] }, c: AccountConfig) => ({
+    secrets: { ...s, withdrawAllowlist: [{ address: COLD, label: "Cold", addedAt: 1 }] },
+    config: c,
+  });
+
+  it("changes only with valid auth and survives lock/unlock sealed", async () => {
+    await createVault(config, { masterKey: MASTER }, "pw");
+    await expect(updateVault(pw("wrong"), add)).rejects.toBeInstanceOf(WrongPasswordError);
+    expect(await loadSession()).toMatchObject({ secrets: { masterKey: MASTER } });
+    expect((await loadSession()) as { secrets: object }).not.toHaveProperty("secrets.withdrawAllowlist");
+
+    await updateVault(pw("pw"), add);
+    await lock();
+    expect(JSON.stringify(await fakeBrowser.storage.local.get())).not.toContain(COLD.slice(2));
+    await unlock(pw("pw"));
+    expect(await loadSession()).toMatchObject({ secrets: { withdrawAllowlist: [{ address: COLD, label: "Cold" }] } });
+  });
+});
+
+describe("activity stamp", () => {
+  // An auto-lock check sees "unlocked with no activity" as expired, so the
+  // stamp must land before the keys on every path that unlocks.
+  async function unlockedWithoutStamp(run: () => Promise<unknown>) {
+    const violations: string[] = [];
+    const listener = async () => {
+      const session = await fakeBrowser.storage.session.get();
+      if (session.unlocked && session.lastActive === undefined) violations.push("unlocked before lastActive");
+    };
+    fakeBrowser.storage.onChanged.addListener(listener);
+    try {
+      await run();
+    } finally {
+      fakeBrowser.storage.onChanged.removeListener(listener);
+    }
+    return violations;
+  }
+
+  it("is recorded before the keys on create and unlock, and cleared on lock", async () => {
+    expect(await unlockedWithoutStamp(() => createVault(config, { masterKey: MASTER }, "pw"))).toEqual([]);
+    await lock();
+    expect(await fakeBrowser.storage.session.get()).toEqual({});
+    expect(await unlockedWithoutStamp(() => unlock(pw("pw")))).toEqual([]);
+  });
+});
+
 describe("updateVault ordering", () => {
   it("runs the change only after auth succeeds, and writes nothing if it throws", async () => {
     await createVault(config, { masterKey: MASTER }, "pw");

@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
 import { buildMarkets, marketByCoin, usdcTokenId } from "@/lib/markets";
-import { prefsItem } from "@/lib/storage";
+import { loadPrefs } from "@/lib/prefs";
 import { useUnlocked } from "./session";
 
 const LIVE_MS = 5_000;
@@ -105,7 +105,7 @@ export const useActiveTwaps = () =>
   );
 
 export function usePrefs() {
-  return useQuery({ queryKey: ["prefs"], queryFn: () => prefsItem.getValue(), staleTime: Number.POSITIVE_INFINITY });
+  return useQuery({ queryKey: ["prefs"], queryFn: loadPrefs, staleTime: Number.POSITIVE_INFINITY });
 }
 
 export const useAgents = () => useAccountQuery("agents", (n, user) => infoClient(n).extraAgents({ user }), HISTORY_MS);
