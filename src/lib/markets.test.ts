@@ -1,6 +1,6 @@
 import type { MetaAndAssetCtxsResponse, SpotMetaAndAssetCtxsResponse } from "@nktkas/hyperliquid/api/info";
 import { describe, expect, it } from "vitest";
-import { buildMarkets, freeBalance, spotTokenPrice, spotUsdValue, usdcTokenId } from "./markets";
+import { buildMarkets, freeBalance, spotHoldings, spotTokenPrice, spotUsdValue, usdcTokenId } from "./markets";
 
 const perpCtx = (markPx: string, dayNtlVlm: string) => ({
   prevDayPx: markPx,
@@ -110,6 +110,34 @@ describe("spot valuation", () => {
         markets,
       ),
     ).toBe(200);
+  });
+});
+
+describe("spotHoldings", () => {
+  const markets = buildMarkets(perp, spot);
+
+  it("drops zero balances, prices tokens, and sorts by USD value with unpriced last", () => {
+    expect(
+      spotHoldings(
+        [
+          { coin: "NOPE", total: "1000" },
+          { coin: "USDC", total: "50" },
+          { coin: "PURR", total: "0.0" },
+          { coin: "HYPE", total: "2.5" },
+          { coin: "ABC", total: "3" },
+        ],
+        markets,
+      ),
+    ).toEqual([
+      { coin: "HYPE", total: "2.5", usd: 100 },
+      { coin: "USDC", total: "50", usd: 50 },
+      { coin: "ABC", total: "3", usd: null },
+      { coin: "NOPE", total: "1000", usd: null },
+    ]);
+  });
+
+  it("returns an empty list when everything is zero", () => {
+    expect(spotHoldings([{ coin: "USDC", total: "0.0" }], markets)).toEqual([]);
   });
 });
 

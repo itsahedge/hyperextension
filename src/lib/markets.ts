@@ -97,6 +97,24 @@ export function spotTokenPrice(token: string, markets: Market[]): number | null 
   return pair ? pair.markPx : null;
 }
 
+export interface SpotHolding {
+  coin: string;
+  // API decimal string, kept as-is for display precision.
+  total: string;
+  usd: number | null;
+}
+
+// Non-zero spot balances, largest USD value first; unpriced tokens last.
+export function spotHoldings(balances: { coin: string; total: string }[], markets: Market[]): SpotHolding[] {
+  return balances
+    .filter((b) => Number(b.total) !== 0)
+    .map((b) => {
+      const price = spotTokenPrice(b.coin, markets);
+      return { coin: b.coin, total: b.total, usd: price === null ? null : Number(b.total) * price };
+    })
+    .sort((a, b) => (b.usd ?? -Infinity) - (a.usd ?? -Infinity) || a.coin.localeCompare(b.coin));
+}
+
 export function spotUsdValue(balances: { coin: string; total: string }[], markets: Market[]): number {
   let sum = 0;
   for (const b of balances) {

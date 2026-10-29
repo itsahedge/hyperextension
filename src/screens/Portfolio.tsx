@@ -1,5 +1,6 @@
 import type { ClearinghouseStateResponse } from "@nktkas/hyperliquid/api/info";
 import { useState } from "react";
+import { SpotBalancesCard } from "@/components/SpotBalances";
 import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, Stat, errorMessage } from "@/components/ui";
 import { useExchange, useMarketData, usePerpState, useSpotState } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
@@ -46,7 +47,7 @@ export function Portfolio() {
         </div>
       </Card>
 
-      <Card title={`Positions (${positions.length})`}>
+      <Card title={`Perp positions (${positions.length})`}>
         {positions.length === 0 ? (
           <Empty>No open positions</Empty>
         ) : (
@@ -57,6 +58,8 @@ export function Portfolio() {
           </ul>
         )}
       </Card>
+
+      <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
     </div>
   );
 }

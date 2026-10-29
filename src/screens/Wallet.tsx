@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { AuthorizeDialog } from "@/components/AuthorizeDialog";
-import { Button, Card, Empty, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
+import { SpotBalancesCard } from "@/components/SpotBalances";
+import { Button, Card, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
 import { useExchange, useMarketData, usePerpState, useSpotState } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { parseAddress } from "@/lib/account";
-import { fmtSize, fmtUsd } from "@/lib/format";
-import { freeBalance, spotTokenPrice } from "@/lib/markets";
+import { fmtUsd } from "@/lib/format";
+import { freeBalance } from "@/lib/markets";
 import { verify } from "@/lib/session";
 
 export function Wallet() {
@@ -18,7 +19,6 @@ export function Wallet() {
   if (perp.isError) return <Notice tone="error">{errorMessage(perp.error)}</Notice>;
   if (spot.isError) return <Notice tone="error">{errorMessage(spot.error)}</Notice>;
 
-  const balances = spot.data.balances.filter((b) => Number(b.total) !== 0);
   const usdc = spot.data.balances.find((b) => b.coin === "USDC");
   const spotUsdcFree = usdc ? freeBalance(usdc) : 0;
 
@@ -31,26 +31,7 @@ export function Wallet() {
         </div>
       </Card>
 
-      <Card title="Spot balances">
-        {balances.length === 0 ? (
-          <Empty>No spot balances</Empty>
-        ) : (
-          <ul className="flex flex-col divide-y divide-line text-xs">
-            {balances.map((b) => {
-              const price = markets.data ? spotTokenPrice(b.coin, markets.data.markets) : null;
-              return (
-                <li key={b.coin} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
-                  <span className="font-medium">{b.coin}</span>
-                  <span className="ml-auto tabular-nums">{fmtSize(b.total)}</span>
-                  <span className="min-w-20 text-right text-muted tabular-nums">
-                    {price === null ? "-" : fmtUsd(Number(b.total) * price)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
+      <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
 
       <TransferCard spotFree={spotUsdcFree} perpFree={Number(perp.data.withdrawable)} usdcToken={markets.data?.usdcToken} />
       <WithdrawCard withdrawable={Number(perp.data.withdrawable)} />
