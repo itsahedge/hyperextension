@@ -76,7 +76,7 @@ Order types, Limit: Order, Stop, Scale, Scale Side; Market: Order, Stop, Swarm, 
 - **Swarm**: splits a market order into 2 to 50 lots (optionally irregular) sent together.
 - **TWAP**: Hyperliquid's native TWAP, 5 minutes to 24 hours; it runs on the exchange after the popup closes.
 - **TP/SL**: attaches market TP/SL children to a limit or market entry. Hyperliquid places them only if the entry fully fills.
-- **Long / Short buttons** preview exactly what each side will send.
+- **Side toggle**: pick Buy/Long or Sell/Short first; everything below (max size, slider, previews, warnings, Available) describes that side only, and one submit button sends it, previewing exactly what it will send. Warnings name the side and the price they cross, e.g. "All 10 buy orders are at or above the best ask".
 - **Footer**: margin mode and leverage, and the max slippage used by market, swarm, and close orders.
 
 Batches report each order's outcome when Hyperliquid rejects some of them; nothing is ever resent automatically.

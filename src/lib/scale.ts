@@ -111,10 +111,13 @@ export function planScale(input: ScaleInput): ScalePlan {
     const { bid, ask } = input.book;
     crossing = rungs.filter((r) => (input.isBuy ? Number(r.px) >= ask : Number(r.px) <= bid)).length;
   }
-  if (crossing > 0 && input.postOnly) {
-    throw new Error(`Post-only would be rejected: ${crossing} of the orders cross the book`);
+  if (crossing > 0) {
+    const side = input.isBuy ? "buy" : "sell";
+    const where = input.isBuy ? `at or above the best ask (${input.book!.ask})` : `at or below the best bid (${input.book!.bid})`;
+    const which = crossing === rungs.length ? `All ${crossing} ${side} orders are` : `${crossing} of ${rungs.length} ${side} orders are`;
+    if (input.postOnly) throw new Error(`Post-only would be rejected: ${which} ${where}`);
+    warnings.push(`${which} ${where} and fill immediately as taker instead of resting`);
   }
-  if (crossing > 0) warnings.push(`${crossing} of the orders cross the book and fill now as taker`);
 
   const totalSize = rungs.reduce((a, r) => a + Number(r.sz), 0);
   const notional = rungs.reduce((a, r) => a + Number(r.sz) * Number(r.px), 0);
