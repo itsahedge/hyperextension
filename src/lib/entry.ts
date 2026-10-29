@@ -26,7 +26,11 @@ export const ORDER_TYPES: { group: "Limit" | "Market"; id: OrderTypeId; label: s
 export const TPSL_TYPES: OrderTypeId[] = ["limit", "market"];
 export const POST_TYPES: OrderTypeId[] = ["limit", "scale", "scaleSide"];
 
+export type Side = "buy" | "sell";
+
 export interface PanelState {
+  // The one side the panel builds and sends; the whole panel describes it.
+  side: Side;
   type: OrderTypeId;
   // Base units; the USD input converts through referencePrice.
   size: string;
@@ -53,6 +57,7 @@ export interface PanelState {
 }
 
 export const initialPanel: PanelState = {
+  side: "buy",
   type: "limit",
   size: "",
   price: "",
