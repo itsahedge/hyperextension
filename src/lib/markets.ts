@@ -17,6 +17,9 @@ export interface Market {
   prevDayPx: number;
   dayNtlVlm: number;
   funding: number | null;
+  // Perps only: open interest in base units. The API field is unitless in the
+  // docs; magnitudes (BTC ~42k at ~$81k = ~$3.4B) show it counts coins.
+  openInterest: number | null;
 }
 
 // Spot asset ids are 10000 + the pair's universe index (Hyperliquid "Asset IDs" docs).
@@ -42,6 +45,7 @@ export function buildMarkets(
       prevDayPx: Number(ctx.prevDayPx),
       dayNtlVlm: Number(ctx.dayNtlVlm),
       funding: Number(ctx.funding),
+      openInterest: Number(ctx.openInterest),
     });
   });
 
@@ -65,6 +69,7 @@ export function buildMarkets(
       prevDayPx: Number(ctx.prevDayPx),
       dayNtlVlm: Number(ctx.dayNtlVlm),
       funding: null,
+      openInterest: null,
     });
   }
 

@@ -19,6 +19,7 @@ const eth: Market = {
   prevDayPx: 2000,
   dayNtlVlm: 1,
   funding: 0,
+  openInterest: 1000,
 };
 const spot: Market = { ...eth, kind: "spot", name: "HYPE/USDC", coin: "@107", assetId: 10_107, szDecimals: 2 };
 

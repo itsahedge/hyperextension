@@ -24,6 +24,7 @@ const btc: Market = {
   prevDayPx: 99_000,
   dayNtlVlm: 1,
   funding: 0.0001,
+  openInterest: 1000,
 };
 
 const hype: Market = {
@@ -37,6 +38,7 @@ const hype: Market = {
   markPx: 40.1234,
   midPx: 40.1234,
   funding: null,
+  openInterest: null,
 };
 
 describe("marketPrice", () => {

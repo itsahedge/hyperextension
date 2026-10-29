@@ -14,6 +14,7 @@ const eth: Market = {
   prevDayPx: 2000,
   dayNtlVlm: 1,
   funding: 0,
+  openInterest: 1000,
 };
 const hype: Market = { ...eth, kind: "spot", name: "HYPE/USDC", coin: "@107", assetId: 10_107, szDecimals: 2, midPx: 40, markPx: 40 };
 const ctx: EntryContext = { market: eth, book: { bid: 1999, ask: 2001 }, slippage: 0.01 };
