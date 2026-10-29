@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Badge, Button, cx } from "@/components/ui";
 import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
+import { useVpnState } from "@/hooks/vpn";
 import { shortAddress } from "@/lib/format";
 import { lock } from "@/lib/session";
 import { Activity } from "@/screens/Activity";
@@ -88,6 +89,7 @@ function Shell() {
         </span>
         <Badge tone={config.mode === "agent" ? "accent" : "neutral"}>{config.mode === "agent" ? "API wallet" : "Master"}</Badge>
         {config.network === "testnet" && <Badge tone="warn">Testnet</Badge>}
+        <VpnBadge />
         <RefreshButton />
         <Button variant="ghost" size="sm" onClick={() => void lock()}>
           Lock
@@ -116,4 +118,10 @@ function Shell() {
       </nav>
     </div>
   );
+}
+
+function VpnBadge() {
+  const vpn = useVpnState();
+  if (!vpn.data?.enabled) return null;
+  return vpn.data.connected ? <Badge tone="up">VPN</Badge> : <Badge tone="down">VPN down</Badge>;
 }
