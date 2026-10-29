@@ -1,6 +1,11 @@
+import { ExchangeClient } from "@nktkas/hyperliquid";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { Market } from "./markets";
-import { buildClose, buildOrder, marketPrice } from "./orders";
+import { buildClose, buildOrder, marketPrice, placeOrder } from "./orders";
 
 const btc: Market = {
   kind: "perp",
@@ -82,6 +87,54 @@ describe("buildOrder", () => {
     expect(() => buildOrder({ market: btc, isBuy: true, size: "abc", type: "market" })).toThrow();
     expect(() => buildOrder({ market: hype, isBuy: true, size: "0.001", type: "market" })).toThrow();
     expect(() => buildOrder({ market: btc, isBuy: true, size: "1", type: "limit", price: "" })).toThrow(/Price/);
+  });
+});
+
+describe("no builder codes", () => {
+  // Captures the exact JSON the SDK would POST to /exchange, after signing.
+  function capturingClient() {
+    const sent: { endpoint: string; payload: { action: Record<string, unknown> } }[] = [];
+    const transport = {
+      isTestnet: true,
+      async request(endpoint: "info" | "exchange", payload: unknown) {
+        sent.push({ endpoint, payload: payload as never });
+        return { status: "ok", response: { type: "order", data: { statuses: [{ resting: { oid: 1 } }] } } } as never;
+      },
+    };
+    // Well-known Anvil/Hardhat development key. Never fund it.
+    const wallet = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
+    return { client: new ExchangeClient({ transport, wallet }), sent };
+  }
+
+  it.each([
+    ["market", () => buildOrder({ market: btc, isBuy: true, size: "0.01", type: "market" })],
+    ["limit", () => buildOrder({ market: btc, isBuy: false, size: "1", type: "limit", price: "105000", tif: "Alo" })],
+    ["spot", () => buildOrder({ market: hype, isBuy: true, size: "2", type: "market" })],
+    ["close", () => buildClose(btc, "-0.25")],
+  ])("%s order payload has no builder field", async (_name, make) => {
+    const { client, sent } = capturingClient();
+    await placeOrder(client, make());
+    expect(sent).toHaveLength(1);
+    const { action } = sent[0]!.payload;
+    expect(action.type).toBe("order");
+    expect(action).not.toHaveProperty("builder");
+    expect(JSON.stringify(sent[0]!.payload)).not.toMatch(/"builder"/);
+  });
+
+  // Guards against reintroducing builder approvals, builder-tagged orders, or
+  // referral codes anywhere in the app source.
+  it("app source never references builder fees or referrals", () => {
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    const files = readdirSync(root, { recursive: true, encoding: "utf8" }).filter(
+      (f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$/.test(f),
+    );
+    expect(files.length).toBeGreaterThan(10);
+    const offenders = files.filter((f) =>
+      /approveBuilderFee|maxBuilderFee|approvedBuilders|\bbuilder\s*:|setReferrer|registerReferrer/.test(
+        readFileSync(join(root, f), "utf8"),
+      ),
+    );
+    expect(offenders).toEqual([]);
   });
 });
 

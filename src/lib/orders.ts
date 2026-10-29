@@ -1,3 +1,4 @@
+import type { ExchangeClient } from "@nktkas/hyperliquid";
 import type { OrderParameters } from "@nktkas/hyperliquid/api/exchange";
 import { formatPrice, formatSize } from "@nktkas/hyperliquid/utils";
 import type { Market } from "./markets";
@@ -55,6 +56,13 @@ export function buildOrder(input: OrderInput): OrderSpec {
     r: market.kind === "perp" && Boolean(input.reduceOnly),
     t: { limit: { tif: type === "market" ? "FrontendMarket" : (input.tif ?? "Gtc") } },
   };
+}
+
+// The only place orders are sent. Personal tool: never attach a builder code
+// (the optional `builder` order field, { b, f }, that routes a fee to a third
+// party). orders.test.ts asserts the signed payload carries none.
+export function placeOrder(client: ExchangeClient, order: OrderSpec) {
+  return client.order({ orders: [order], grouping: "na" });
 }
 
 // Reduce-only market order for the full position size, opposite side.

@@ -6,7 +6,7 @@ import { useExchange, useMarketData, useOpenOrders } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { fmtCompactUsd, fmtPct, fmtPrice, fmtRate, fmtSize, fmtUsd, toneOf } from "@/lib/format";
 import type { Market, MarketKind } from "@/lib/markets";
-import { buildOrder, DEFAULT_SLIPPAGE, type LimitTif, type OrderType } from "@/lib/orders";
+import { buildOrder, DEFAULT_SLIPPAGE, placeOrder, type LimitTif, type OrderType } from "@/lib/orders";
 
 export function Trade() {
   const { config } = useUnlocked();
@@ -122,9 +122,7 @@ function OrderForm({ market }: { market: Market }) {
   const [slippagePct, setSlippagePct] = useState(String(DEFAULT_SLIPPAGE * 100));
   const [formError, setFormError] = useState<string | null>(null);
 
-  const place = useExchange((client, order: ReturnType<typeof buildOrder>) =>
-    client.order({ orders: [order], grouping: "na" }),
-  );
+  const place = useExchange(placeOrder);
 
   const isPerp = market.kind === "perp";
   const refPrice = type === "limit" && Number(price) > 0 ? Number(price) : market.markPx;

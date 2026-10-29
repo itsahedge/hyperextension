@@ -6,7 +6,7 @@ import { useUnlocked } from "@/hooks/session";
 import { fmtPct, fmtPrice, fmtSignedUsd, fmtSize, fmtUsd, toneOf } from "@/lib/format";
 import type { Market } from "@/lib/markets";
 import { spotUsdValue } from "@/lib/markets";
-import { buildClose, DEFAULT_SLIPPAGE } from "@/lib/orders";
+import { buildClose, DEFAULT_SLIPPAGE, placeOrder } from "@/lib/orders";
 
 type Position = ClearinghouseStateResponse["assetPositions"][number]["position"];
 
@@ -63,7 +63,7 @@ export function Portfolio() {
 
 function PositionRow({ position: p, market }: { position: Position; market: Market | undefined }) {
   const [confirming, setConfirming] = useState(false);
-  const close = useExchange((client, m: Market) => client.order({ orders: [buildClose(m, p.szi)], grouping: "na" }));
+  const close = useExchange((client, m: Market) => placeOrder(client, buildClose(m, p.szi)));
   const isLong = Number(p.szi) > 0;
 
   return (
