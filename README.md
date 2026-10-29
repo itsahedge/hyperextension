@@ -7,7 +7,7 @@ Personal Hyperliquid trading extension for Chrome. Single user, no backend: the 
 | Tab | What it does |
 |---|---|
 | Portfolio | Total value, perp equity, spot value, unrealized PnL, margin; spot balances; perp positions with market close |
-| Trade | Insilico-style order panel (see [Trade panel](#trade-panel)); open orders for the selected market |
+| Trade | Insilico-style order panel (see [Trade panel](#trade-panel)); favorite markets; open orders for the selected market |
 | Orders | Open orders and active TWAPs, order history with status filters, market filter, cancel one / all / by market |
 | Wallet | Perp and spot balances, spot↔perp USDC transfer, withdraw to Arbitrum, deposit address |
 | Activity | Fills, funding payments (7 days), transfers and other ledger updates (30 days) |
@@ -68,6 +68,8 @@ Settings can generate a fresh API wallet, approve it from the master key, switch
 ## Trade panel
 
 Order types, Limit: Order, Stop, Scale, Scale Side; Market: Order, Stop, Swarm, TWAP. Stop, TP/SL and TWAP are perps only.
+
+- **Favorites**: star markets in the market picker (or the star beside the selected market). Favorites are pinned at the top of the list, shown as one-tap chips under the picker, and the first one opens by default. They are saved per network, since spot market ids differ between mainnet and testnet.
 
 - **Size**: base and USDC inputs kept in sync, MAX, slider and 25/33/50/66/75/100% presets. 100% uses Hyperliquid's max trade size for the side (perps) or free balance (spot); reduce mode caps at the position.
 - **Scale**: 2 to 50 orders between two prices, sent as one batch. Price skew bunches rungs toward the low or high price; size skew weights size toward either end (up to 4:1). Rungs that round to the same tick are merged; every rung must be at least $10; post-only refuses rungs that would cross. A live preview shows rung prices, sizes, and the average price.

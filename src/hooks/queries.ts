@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
 import { buildMarkets, marketByCoin, usdcTokenId } from "@/lib/markets";
+import { loadFavorites, toggleStoredFavorite } from "@/lib/favorites";
 import { loadPrefs } from "@/lib/prefs";
 import { useUnlocked } from "./session";
 
@@ -103,6 +104,16 @@ export const useActiveTwaps = () =>
     },
     LIVE_MS,
   );
+
+export function useFavorites(network: Network) {
+  const queryClient = useQueryClient();
+  const query = useQuery({ queryKey: ["favorites"], queryFn: loadFavorites, staleTime: Number.POSITIVE_INFINITY });
+  const toggle = useMutation({
+    mutationFn: (coin: string) => toggleStoredFavorite(network, coin),
+    onSuccess: (next) => queryClient.setQueryData(["favorites"], next),
+  });
+  return { ready: query.isSuccess, list: query.data?.[network] ?? [], toggle: (coin: string) => toggle.mutate(coin) };
+}
 
 export function usePrefs() {
   return useQuery({ queryKey: ["prefs"], queryFn: loadPrefs, staleTime: Number.POSITIVE_INFINITY });
