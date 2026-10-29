@@ -47,6 +47,8 @@ export function Portfolio() {
         </div>
       </Card>
 
+      <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
+
       <Card title={`Perp positions (${positions.length})`}>
         {positions.length === 0 ? (
           <Empty>No open positions</Empty>
@@ -58,8 +60,6 @@ export function Portfolio() {
           </ul>
         )}
       </Card>
-
-      <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
     </div>
   );
 }
