@@ -3,8 +3,11 @@ import { useMemo } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
 import { buildMarkets, marketByCoin, usdcTokenId } from "@/lib/markets";
+import { CCTP_CONFIG, fetchFeeQuote } from "@/lib/cctp";
+import { arbitrumBalances } from "@/lib/cctpClient";
 import { loadFavorites, toggleStoredFavorite } from "@/lib/favorites";
 import { loadPrefs } from "@/lib/prefs";
+import { fetchDepositAddress, type UnitAsset } from "@/lib/unit";
 import { useUnlocked } from "./session";
 
 const LIVE_MS = 5_000;
@@ -113,6 +116,32 @@ export function useFavorites(network: Network) {
     onSuccess: (next) => queryClient.setQueryData(["favorites"], next),
   });
   return { ready: query.isSuccess, list: query.data?.[network] ?? [], toggle: (coin: string) => toggle.mutate(coin) };
+}
+
+// Arbitrum USDC and ETH (gas) for the trading account, for CCTP deposits.
+export function useArbitrumBalances() {
+  const { config } = useUnlocked();
+  return useQuery({
+    queryKey: ["arbitrumBalances", config.network, config.address],
+    queryFn: () => arbitrumBalances(config.network, config.address),
+    refetchInterval: HISTORY_MS,
+  });
+}
+
+export function useCctpFee(network: Network) {
+  return useQuery({ queryKey: ["cctpFee", network], queryFn: () => fetchFeeQuote(CCTP_CONFIG[network]), refetchInterval: 60_000 });
+}
+
+// Unit addresses are permanent per destination, so one fetch per session.
+export function useUnitDepositAddress(asset: UnitAsset | null) {
+  const { config } = useUnlocked();
+  return useQuery({
+    queryKey: ["unitAddress", config.network, config.address, asset?.chain, asset?.id],
+    queryFn: () => fetchDepositAddress(config.network, asset!, config.address),
+    enabled: asset !== null,
+    staleTime: Infinity,
+    retry: false,
+  });
 }
 
 export function usePrefs() {
