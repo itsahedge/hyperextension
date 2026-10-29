@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: oklch(0.165 0.012 255);
+  --color-surface: oklch(0.205 0.014 255);
+  --color-raised: oklch(0.245 0.016 255);
+  --color-line: oklch(0.3 0.014 255);
+  --color-fg: oklch(0.96 0.005 255);
+  --color-muted: oklch(0.7 0.016 255);
+  --color-faint: oklch(0.55 0.016 255);
+  --color-accent: oklch(0.82 0.12 182);
+  --color-accent-fg: oklch(0.2 0.03 182);
+  --color-up: oklch(0.77 0.15 160);
+  --color-down: oklch(0.69 0.19 22);
+  --color-warn: oklch(0.83 0.14 80);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 380px;
+    height: 600px;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans text-[13px] antialiased;
+    color-scheme: dark;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
