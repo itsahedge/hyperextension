@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { generatePrivateKey } from "viem/accounts";
-import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, PasswordDialog, Segmented, TextField, errorMessage } from "@/components/ui";
+import { AuthorizeDialog } from "@/components/AuthorizeDialog";
+import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
 import { useAgents, useExchange } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { addressOf, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
 import { fmtTime, shortAddress } from "@/lib/format";
-import { lock, updateConfig, updateVault, verifyPassword, wipe } from "@/lib/session";
+import { enrollPasskey, lock, removePasskey, updateConfig, updateVault, wipe, type Auth } from "@/lib/session";
 
 // Hyperliquid caps API wallet expiry at 180 days and names at 16 characters.
 const MAX_AGENT_DAYS = 180;
@@ -16,6 +17,7 @@ export function Settings() {
   return (
     <div className="flex flex-col gap-3">
       <AccountCard />
+      <PasskeyCard />
       <AgentCard />
       <SecurityCard />
     </div>
@@ -140,18 +142,16 @@ function CreateAgent() {
   const daysError =
     !Number.isInteger(daysNum) || daysNum < 1 || daysNum > MAX_AGENT_DAYS ? `Whole days, 1 to ${MAX_AGENT_DAYS}` : null;
 
-  // Order matters: check the password before the on-chain approval so a typo
-  // cannot leave an approved agent whose key was never saved.
-  const create = async (password: string) => {
-    await verifyPassword(password);
+  // updateVault authorizes first, then runs the on-chain approval, then saves:
+  // a failed auth never approves, and a failed approval never stores the key.
+  const create = async (auth: Auth) => {
     const agentKey = generatePrivateKey();
     const agentAddress = addressOf(agentKey);
     const validUntil = Date.now() + daysNum * DAY_MS;
-    await approve.mutateAsync({ agentAddress, agentName: `${name.trim()} valid_until ${validUntil}` });
-    await updateVault(password, (secrets, config) => ({
-      secrets: { ...secrets, agentKey },
-      config: { ...config, mode: "agent" },
-    }));
+    await updateVault(auth, async (secrets, config) => {
+      await approve.mutateAsync({ agentAddress, agentName: `${name.trim()} valid_until ${validUntil}` });
+      return { secrets: { ...secrets, agentKey }, config: { ...config, mode: "agent" } };
+    });
     setDone(agentAddress);
   };
 
@@ -170,13 +170,13 @@ function CreateAgent() {
       <Button variant="primary" disabled={Boolean(nameError || daysError)} onClick={() => setOpen(true)}>
         Generate and approve
       </Button>
-      <PasswordDialog
+      <AuthorizeDialog
         open={open}
         onClose={() => setOpen(false)}
         title="Approve API wallet"
         description="Signs an approveAgent action with the master key and stores the new key in your vault."
         confirmLabel="Approve"
-        onSubmit={create}
+        onAuthorized={create}
       />
     </div>
   );
@@ -197,8 +197,8 @@ function ImportAgent() {
     }
   };
 
-  const save = (password: string) =>
-    updateVault(password, (secrets, config) => ({
+  const save = (auth: Auth) =>
+    updateVault(auth, (secrets, config) => ({
       secrets: { ...secrets, agentKey: parsePrivateKey(key) },
       config: { ...config, mode: "agent" },
     })).then(() => setKey(""));
@@ -217,13 +217,13 @@ function ImportAgent() {
       <Button disabled={!key} onClick={startImport}>
         Import
       </Button>
-      <PasswordDialog
+      <AuthorizeDialog
         open={open}
         onClose={() => setOpen(false)}
         title="Import API wallet"
         description="Replaces any stored API wallet key and switches trading to it."
         confirmLabel="Import"
-        onSubmit={save}
+        onAuthorized={save}
       />
     </div>
   );
@@ -231,8 +231,8 @@ function ImportAgent() {
 
 function ForgetMaster() {
   const [open, setOpen] = useState(false);
-  const forget = (password: string) =>
-    updateVault(password, (secrets, config) => ({
+  const forget = (auth: Auth) =>
+    updateVault(auth, (secrets, config) => ({
       secrets: { agentKey: secrets.agentKey },
       config: { ...config, mode: "agent" },
     }));
@@ -246,15 +246,76 @@ function ForgetMaster() {
       <Button variant="danger" onClick={() => setOpen(true)}>
         Remove master key
       </Button>
-      <PasswordDialog
+      <AuthorizeDialog
         open={open}
         onClose={() => setOpen(false)}
         title="Remove master key"
         description="Make sure the master key is backed up elsewhere. This cannot be undone from the extension."
         confirmLabel="Remove"
-        onSubmit={forget}
+        onAuthorized={forget}
       />
     </div>
+  );
+}
+
+function PasskeyCard() {
+  const { passkeys } = useUnlocked();
+  const [label, setLabel] = useState("This Mac");
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<{ credentialId: string; label: string } | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  return (
+    <Card title="Passkeys">
+      <div className="flex flex-col gap-3">
+        <p className="text-[11px] text-faint">
+          Unlock with Touch ID or another passkey, and confirm withdrawals and key changes with it. Your password still
+          works as recovery. Needs a provider with PRF support, such as iCloud Keychain or Google Password Manager.
+        </p>
+        {passkeys.length === 0 ? (
+          <Empty>No passkeys enrolled</Empty>
+        ) : (
+          <ul className="flex flex-col gap-1.5 text-xs">
+            {passkeys.map((p) => (
+              <li key={p.credentialId} className="flex items-center gap-2">
+                <span className="font-medium">{p.label}</span>
+                <span className="text-faint">added {fmtTime(p.createdAt)}</span>
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setRemoving(p)}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {done && <Notice tone="success">{done}</Notice>}
+        <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+          <TextField label="Name" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <Button variant="primary" disabled={!label.trim()} onClick={() => setAdding(true)}>
+            Add passkey
+          </Button>
+        </div>
+      </div>
+      <AuthorizeDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        title="Add passkey"
+        description="Confirm, then create the passkey when your browser asks."
+        confirmLabel="Continue"
+        onAuthorized={(auth) =>
+          enrollPasskey(auth, label.trim()).then(() => setDone(`Passkey "${label.trim()}" added`))
+        }
+      />
+      <AuthorizeDialog
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        title={`Remove passkey "${removing?.label ?? ""}"`}
+        description="It will no longer unlock this vault. The passkey itself stays in your password manager until you delete it there."
+        confirmLabel="Remove"
+        onAuthorized={(auth) =>
+          removePasskey(auth, removing!.credentialId).then(() => setDone(`Passkey "${removing!.label}" removed`))
+        }
+      />
+    </Card>
   );
 }
 

@@ -9,7 +9,7 @@ import {
   Radio,
   RadioGroup,
 } from "@headlessui/react";
-import { useState, type ButtonHTMLAttributes, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
 
 const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
@@ -276,74 +276,6 @@ export function ConfirmDialog({
           </Button>
         </div>
       </div>
-    </Modal>
-  );
-}
-
-// Re-prompts for the vault password before changing vault contents.
-export function PasswordDialog({
-  open,
-  onClose,
-  title,
-  description,
-  confirmLabel,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  description: ReactNode;
-  confirmLabel: string;
-  onSubmit: (password: string) => Promise<unknown>;
-}) {
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const close = () => {
-    if (busy) return;
-    setPassword("");
-    setError(null);
-    onClose();
-  };
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await onSubmit(password);
-      setPassword("");
-      onClose();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal open={open} onClose={close} title={title}>
-      <form onSubmit={submit} className="flex flex-col gap-3">
-        <div className="text-xs text-muted">{description}</div>
-        <TextField
-          label="Vault password"
-          type="password"
-          autoComplete="current-password"
-          autoFocus
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={error}
-        />
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={close} disabled={busy}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" busy={busy} disabled={!password}>
-            {confirmLabel}
-          </Button>
-        </div>
-      </form>
     </Modal>
   );
 }

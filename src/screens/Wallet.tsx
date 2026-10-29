@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { Button, Card, ConfirmDialog, Empty, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
+import { AuthorizeDialog } from "@/components/AuthorizeDialog";
+import { Button, Card, Empty, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
 import { useExchange, useMarketData, usePerpState, useSpotState } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { parseAddress } from "@/lib/account";
 import { fmtSize, fmtUsd } from "@/lib/format";
 import { freeBalance, spotTokenPrice } from "@/lib/markets";
+import { verify } from "@/lib/session";
 
 export function Wallet() {
   const { config } = useUnlocked();
@@ -189,23 +191,32 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
           Review withdrawal
         </Button>
       </form>
-      <ConfirmDialog
+      <AuthorizeDialog
         open={confirming}
         onClose={() => setConfirming(false)}
         title="Confirm withdrawal"
         confirmLabel="Withdraw"
-        onConfirm={() =>
-          withdraw.mutateAsync({ amount: amount.trim(), destination: parseAddress(destination) }).then(() => setAmount(""))
-        }
-      >
-        <p>
-          Withdraw <strong className="text-fg">{fmtUsd(amount || 0)}</strong> USDC to{" "}
-          <span className="font-mono break-all text-fg">{destination.trim()}</span> on Arbitrum.
-        </p>
-        <p className="mt-2">Hyperliquid charges a $1 withdrawal fee. Signed with the master key.</p>
-        {external && <p className="mt-2 text-warn">This is not your account address.</p>}
-      </ConfirmDialog>
+        onAuthorized={async (auth) => {
+          await verify(auth);
+          await withdraw.mutateAsync({ amount: amount.trim(), destination: parseAddress(destination) });
+          setAmount("");
+        }}
+        description={<WithdrawSummary amount={amount} destination={destination} external={external} />}
+      />
     </Card>
+  );
+}
+
+function WithdrawSummary({ amount, destination, external }: { amount: string; destination: string; external: boolean }) {
+  return (
+    <>
+      <p>
+        Withdraw <strong className="text-fg">{fmtUsd(amount || 0)}</strong> USDC to{" "}
+        <span className="font-mono break-all text-fg">{destination.trim()}</span> on Arbitrum.
+      </p>
+      <p className="mt-2">Hyperliquid charges a $1 withdrawal fee. Signed with the master key.</p>
+      {external && <p className="mt-2 text-warn">This is not your account address.</p>}
+    </>
   );
 }
 
