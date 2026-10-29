@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { AuthorizeDialog } from "@/components/AuthorizeDialog";
+import { CopyAddress } from "@/components/CopyAddress";
 import { SpotBalancesCard } from "@/components/SpotBalances";
 import { Button, Card, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
 import { useExchange, useMarketData, usePerpState, useSpotState } from "@/hooks/queries";
@@ -8,6 +9,7 @@ import { fmtUsd } from "@/lib/format";
 import { freeBalance } from "@/lib/markets";
 import { verify } from "@/lib/session";
 import { DepositCard } from "./wallet/DepositCard";
+import { UnitDepositCard } from "./wallet/UnitDepositCard";
 import { assertWithdrawDestination, withdrawDestinations } from "@/lib/withdraw";
 
 export function Wallet() {
@@ -35,6 +37,7 @@ export function Wallet() {
       <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
 
       <DepositCard />
+      <UnitDepositCard />
       <TransferCard spotFree={spotUsdcFree} perpFree={Number(perp.data.withdrawable)} usdcToken={markets.data?.usdcToken} />
       <WithdrawCard withdrawable={Number(perp.data.withdrawable)} />
 
@@ -209,25 +212,5 @@ function WithdrawSummary({ amount, destination, external }: { amount: string; de
       <p className="mt-2">Hyperliquid charges a $1 withdrawal fee. Signed with the master key.</p>
       {external && <p className="mt-2 text-warn">This is an allowlisted address, not this account.</p>}
     </>
-  );
-}
-
-function CopyAddress({ address }: { address: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex items-center gap-2 rounded-md bg-raised p-2">
-      <span className="min-w-0 flex-1 font-mono text-[11px] break-all">{address}</span>
-      <Button
-        size="sm"
-        onClick={() =>
-          navigator.clipboard.writeText(address).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
-        }
-      >
-        {copied ? "Copied" : "Copy"}
-      </Button>
-    </div>
   );
 }

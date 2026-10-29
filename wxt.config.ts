@@ -21,6 +21,9 @@ export default defineConfig({
       "https://sepolia-rollup.arbitrum.io/*",
       "https://iris-api.circle.com/*",
       "https://iris-api-sandbox.circle.com/*",
+      // Unit Protocol deposit addresses (BTC, ETH, SOL and others).
+      "https://api.hyperunit.xyz/*",
+      "https://api.hyperunit-testnet.xyz/*",
     ],
   },
 });
