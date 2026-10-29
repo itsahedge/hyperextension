@@ -2,7 +2,18 @@ import { ExchangeClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { Market } from "./markets";
-import { cancelTargets, closedHistory, coinsOf, filterByCoin, statusInfo, type HistoricalOrder, type OpenOrder } from "./orderList";
+import {
+  cancelTargets,
+  closedHistory,
+  coinsOf,
+  filterByCoin,
+  filterOrders,
+  groupByCoin,
+  scopeLabel,
+  statusInfo,
+  type HistoricalOrder,
+  type OpenOrder,
+} from "./orderList";
 import { cancelOrders, describeCancels, summarizeCancels } from "./placement";
 
 const market = (coin: string, assetId: number): Market => ({
@@ -39,6 +50,35 @@ describe("open order helpers", () => {
     expect(filterByCoin(orders, "BTC").map((o) => o.oid)).toEqual([11, 13]);
     expect(filterByCoin(orders, null)).toHaveLength(4);
     expect(coinsOf(orders)).toEqual(["BTC", "ETH", "UNKNOWN"]);
+  });
+});
+
+describe("filters and scope", () => {
+  const o = (coin: string, oid: number, side: "B" | "A", isTrigger: boolean) => ({ coin, oid, side, isTrigger }) as OpenOrder;
+  const rows = [o("BTC", 1, "B", false), o("BTC", 2, "A", false), o("BTC", 3, "A", true), o("ETH", 4, "A", false), o("ETH", 5, "B", true)];
+  const ids = (f: Parameters<typeof filterOrders>[1]) => filterOrders(rows, f).map((r) => r.oid);
+
+  it("filters by market, side, and kind independently and combined", () => {
+    expect(ids({ coin: null, side: "all", kind: "all" })).toEqual([1, 2, 3, 4, 5]);
+    expect(ids({ coin: "BTC", side: "all", kind: "all" })).toEqual([1, 2, 3]);
+    expect(ids({ coin: null, side: "sell", kind: "all" })).toEqual([2, 3, 4]);
+    expect(ids({ coin: null, side: "all", kind: "trigger" })).toEqual([3, 5]);
+    expect(ids({ coin: "BTC", side: "sell", kind: "limit" })).toEqual([2]);
+    expect(ids({ coin: "ETH", side: "buy", kind: "limit" })).toEqual([]);
+  });
+
+  it("groups by market in order of appearance", () => {
+    expect(groupByCoin(rows).map((g) => [g.coin, g.rows.length])).toEqual([
+      ["BTC", 3],
+      ["ETH", 2],
+    ]);
+  });
+
+  it("labels exactly what a bulk cancel hits", () => {
+    expect(scopeLabel(10, { side: "sell", kind: "all" }, "KNTQ/USDC")).toBe("Cancel 10 sell orders · KNTQ/USDC");
+    expect(scopeLabel(3, { side: "all", kind: "limit" }, null)).toBe("Cancel 3 limit orders · all markets");
+    expect(scopeLabel(1, { side: "buy", kind: "trigger" }, "BTC")).toBe("Cancel 1 buy trigger order · BTC");
+    expect(scopeLabel(25, { side: "all", kind: "all" }, null)).toBe("Cancel 25 orders · all markets");
   });
 });
 

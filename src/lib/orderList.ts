@@ -14,6 +14,44 @@ export function cancelTargets(orders: OpenOrder[], byCoin: Map<string, Market>):
   });
 }
 
+export type SideFilter = "all" | "buy" | "sell";
+// "limit": resting limit orders. "trigger": stops, take-profits, and TP/SL,
+// which only become live orders when their trigger price hits.
+export type KindFilter = "all" | "limit" | "trigger";
+
+export interface OrderFilter {
+  coin: string | null;
+  side: SideFilter;
+  kind: KindFilter;
+}
+
+export function matchesFilter(o: OpenOrder, f: OrderFilter): boolean {
+  if (f.coin !== null && o.coin !== f.coin) return false;
+  if (f.side !== "all" && (o.side === "B") !== (f.side === "buy")) return false;
+  if (f.kind !== "all" && o.isTrigger !== (f.kind === "trigger")) return false;
+  return true;
+}
+
+export function filterOrders(rows: OpenOrder[], f: OrderFilter): OpenOrder[] {
+  return rows.filter((o) => matchesFilter(o, f));
+}
+
+// Rows grouped by market, markets in order of first appearance.
+export function groupByCoin<T extends { coin: string }>(rows: T[]): { coin: string; rows: T[] }[] {
+  const groups = new Map<string, T[]>();
+  for (const r of rows) groups.set(r.coin, [...(groups.get(r.coin) ?? []), r]);
+  return [...groups].map(([coin, rs]) => ({ coin, rows: rs }));
+}
+
+// Button and dialog text naming exactly which orders a bulk cancel hits.
+export function scopeLabel(count: number, f: Omit<OrderFilter, "coin">, marketName: string | null): string {
+  const kind = f.kind === "limit" ? "limit " : f.kind === "trigger" ? "trigger " : "";
+  const side = f.side === "buy" ? "buy " : f.side === "sell" ? "sell " : "";
+  const noun = count === 1 ? "order" : "orders";
+  const where = marketName ? ` · ${marketName}` : " · all markets";
+  return `Cancel ${count} ${side}${kind}${noun}${where}`;
+}
+
 export function filterByCoin<T extends { coin: string }>(rows: T[], coin: string | null): T[] {
   return coin === null ? rows : rows.filter((r) => r.coin === coin);
 }
