@@ -28,6 +28,7 @@ const market = (coin: string, assetId: number): Market => ({
   prevDayPx: 1,
   dayNtlVlm: 1,
   funding: 0,
+  openInterest: 1000,
 });
 const byCoin = new Map([
   ["BTC", market("BTC", 0)],

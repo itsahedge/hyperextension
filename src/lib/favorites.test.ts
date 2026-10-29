@@ -15,6 +15,7 @@ const m = (coin: string): Market => ({
   prevDayPx: 1,
   dayNtlVlm: 1,
   funding: 0,
+  openInterest: 1000,
 });
 const markets = ["BTC", "ETH", "SOL", "HYPE"].map(m);
 
