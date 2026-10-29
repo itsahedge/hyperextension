@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Badge, Button, cx } from "@/components/ui";
 import { useSession, useUnlocked } from "@/hooks/session";
@@ -21,6 +22,48 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+// Data also polls on its own (account every 5s, markets every 10s, history
+// every 30s); this forces the current screen's queries to refetch now.
+function RefreshButton() {
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.refetchQueries({ type: "active" });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="ml-auto w-7 px-0"
+      aria-label="Refresh"
+      title="Refresh"
+      disabled={refreshing}
+      onClick={() => void refresh()}
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={cx("size-3.5", refreshing && "animate-spin")}
+      >
+        <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+        <path d="M13.5 2.5v3h-3" />
+      </svg>
+    </Button>
+  );
+}
+
 export function App() {
   const session = useSession();
   if (session.status === "empty") return <Setup />;
@@ -41,7 +84,8 @@ function Shell() {
         </span>
         <Badge tone={config.mode === "agent" ? "accent" : "neutral"}>{config.mode === "agent" ? "API wallet" : "Master"}</Badge>
         {config.network === "testnet" && <Badge tone="warn">Testnet</Badge>}
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => void lock()}>
+        <RefreshButton />
+        <Button variant="ghost" size="sm" onClick={() => void lock()}>
           Lock
         </Button>
       </header>
