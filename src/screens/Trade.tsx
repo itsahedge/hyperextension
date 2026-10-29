@@ -4,9 +4,9 @@ import { useBook, useMarketData } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { initialPanel, ORDER_TYPES, type PanelState } from "@/lib/entry";
 import type { Market, MarketKind } from "@/lib/markets";
-import { ActiveTwaps } from "./trade/ActiveTwaps";
+import { ActiveTwaps } from "@/components/ActiveTwaps";
+import { OpenOrdersList } from "@/components/OpenOrdersList";
 import { MarketHeader, MarketPicker } from "./trade/MarketPicker";
-import { OpenOrders } from "./trade/OpenOrders";
 import { OrderPanel } from "./trade/OrderPanel";
 
 // Prices and sizes are per market; switching markets clears them but keeps
@@ -68,8 +68,8 @@ export function Trade() {
       ) : (
         <Empty>No markets</Empty>
       )}
+      {selected && <OpenOrdersList byCoin={data.data.byCoin} coin={selected.coin} />}
       <ActiveTwaps byCoin={data.data.byCoin} />
-      <OpenOrders byCoin={data.data.byCoin} />
     </div>
   );
 }

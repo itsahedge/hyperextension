@@ -5,6 +5,7 @@ import { useSession, useUnlocked } from "@/hooks/session";
 import { shortAddress } from "@/lib/format";
 import { lock } from "@/lib/session";
 import { Activity } from "@/screens/Activity";
+import { Orders } from "@/screens/Orders";
 import { Portfolio } from "@/screens/Portfolio";
 import { Settings } from "@/screens/Settings";
 import { Setup } from "@/screens/Setup";
@@ -15,6 +16,7 @@ import { Wallet } from "@/screens/Wallet";
 const TABS = [
   { id: "portfolio", label: "Portfolio", Screen: Portfolio },
   { id: "trade", label: "Trade", Screen: Trade },
+  { id: "orders", label: "Orders", Screen: Orders },
   { id: "wallet", label: "Wallet", Screen: Wallet },
   { id: "activity", label: "Activity", Screen: Activity },
   { id: "settings", label: "Settings", Screen: Settings },
@@ -94,7 +96,7 @@ function Shell() {
         <Screen />
       </main>
 
-      <nav aria-label="Sections" className="grid shrink-0 grid-cols-5 border-t border-line">
+      <nav aria-label="Sections" className="grid shrink-0 grid-cols-6 border-t border-line">
         {TABS.map((t) => (
           <button
             key={t.id}

@@ -42,6 +42,10 @@ export const useSpotState = () =>
 export const useOpenOrders = () =>
   useAccountQuery("openOrders", (n, user) => infoClient(n).frontendOpenOrders({ user }), LIVE_MS);
 
+// At most the 2000 most recent orders (Hyperliquid info endpoint docs).
+export const useOrderHistory = () =>
+  useAccountQuery("orderHistory", (n, user) => infoClient(n).historicalOrders({ user }), HISTORY_MS);
+
 export const useFills = () => useAccountQuery("fills", (n, user) => infoClient(n).userFills({ user }), HISTORY_MS);
 
 export const useFunding = () =>

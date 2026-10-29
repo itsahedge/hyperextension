@@ -63,6 +63,36 @@ export async function submitOrders(client: ExchangeClient, orders: OrderSpec[], 
   }
 }
 
+export interface CancelSummary {
+  total: number;
+  canceled: number;
+  errors: string[];
+}
+
+export function summarizeCancels(statuses: ("success" | { error: string })[]): CancelSummary {
+  const errors = statuses.flatMap((s) => (s === "success" ? [] : [s.error]));
+  return { total: statuses.length, canceled: statuses.length - errors.length, errors };
+}
+
+// One signed batch for any number of cancels. Like orders, the SDK throws if
+// any cancel fails, but the error carries every per-order status.
+export async function cancelOrders(client: ExchangeClient, cancels: { a: number; o: number }[]): Promise<CancelSummary> {
+  if (cancels.length === 0) return { total: 0, canceled: 0, errors: [] };
+  try {
+    const res = await client.cancel({ cancels });
+    return summarizeCancels(res.response.data.statuses);
+  } catch (err) {
+    const statuses = err instanceof ApiRequestError ? statusesOf(err.response) : null;
+    if (statuses) return summarizeCancels(statuses as ("success" | { error: string })[]);
+    throw err;
+  }
+}
+
+export function describeCancels(s: CancelSummary): string {
+  const done = `${s.canceled} of ${s.total} canceled`;
+  return s.errors.length ? `${done}; ${[...new Set(s.errors)].join("; ")}` : done;
+}
+
 // For single orders, where a rejection should surface as an error.
 export function assertAccepted(s: PlacementSummary): PlacementSummary {
   if (s.errors.length) throw new Error([...new Set(s.errors)].join("; "));
