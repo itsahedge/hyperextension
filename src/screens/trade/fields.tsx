@@ -232,8 +232,10 @@ export function TpSlFields({ s, set, refPx, limitEntry, isBuy }: { s: PanelState
         <NumberBox label={isBuy ? "Stop loss (below)" : "Stop loss (above)"} value={s.sl} onChange={(sl) => set({ sl })} action={<span className="text-[10px] text-faint">{pct(s.sl)}</span>} placeholder="Price" />
       </div>
       <p className="text-[10px] text-faint">
-        Market triggers on the mark price, up to 10% slippage, sized to the entry.
-        {limitEntry && " Placed only if the entry fully fills; cancelling a partly filled entry cancels them."}
+        {/* Matches Hyperliquid's TP/SL docs for parent-order (OCO) TP/SL. */}
+        Market triggers on the mark price, up to 10% slippage, fixed to the entry's size.
+        {limitEntry &&
+          " Placed only if the entry fully fills (or partly fills and is then canceled for insufficient margin); canceling a partly filled entry cancels them."}
       </p>
     </div>
   );
