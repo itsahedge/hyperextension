@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressOf, parseAddress, parsePrivateKey, signerKey, trySignerKey, validateAccount, type AccountConfig } from "./account";
+import { addressOf, parseAddress, parsePrivateKey, signerKey, validateAccount, type AccountConfig } from "./account";
 
 // Well-known Anvil/Hardhat development keys. Never fund these.
 const MASTER = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as const;
@@ -42,13 +42,6 @@ describe("signerKey", () => {
 
   it("throws when the active mode has no key", () => {
     expect(() => signerKey(config("agent"), { masterKey: MASTER })).toThrow(/agent/);
-  });
-});
-
-describe("trySignerKey", () => {
-  it("returns null instead of throwing when the mode's key is missing", () => {
-    expect(trySignerKey(config("agent"), { masterKey: MASTER })).toBeNull();
-    expect(trySignerKey(config("master"), { masterKey: MASTER })).toBe(MASTER);
   });
 });
 

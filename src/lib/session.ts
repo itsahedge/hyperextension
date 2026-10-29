@@ -1,6 +1,6 @@
 import { validateAccount, type AccountConfig } from "./account";
 import { assertPasskey, createPasskey } from "./passkey";
-import { configItem, unlockedItem, vaultItem } from "./storage";
+import { configItem, unlockedItem, vaultItem, type UnlockedSession } from "./storage";
 import {
   addPasskeySlot,
   createVault as createVaultData,
@@ -13,6 +13,7 @@ import {
   unwrapWithPrf,
   type DataKey,
   type Secrets,
+  type StoredVault,
   type VaultV2,
 } from "./vault";
 
@@ -30,16 +31,27 @@ export type SessionState =
   | { status: "unlocked"; config: AccountConfig; secrets: Secrets; passkeys: PasskeyInfo[] };
 
 export async function loadSession(): Promise<SessionState> {
-  const [vault, config, secrets] = await Promise.all([
+  const [vault, config, unlocked] = await Promise.all([
     vaultItem.getValue(),
     configItem.getValue(),
     unlockedItem.getValue(),
   ]);
+  return deriveSession(vault, config, unlocked);
+}
+
+// While unlocked, config comes from the unlocked item, never from
+// `local:config`: the two are written separately, and only the unlocked item
+// is guaranteed to match the secrets beside it.
+export function deriveSession(
+  vault: StoredVault | null,
+  config: AccountConfig | null,
+  unlocked: UnlockedSession | null,
+): SessionState {
   if (!vault || !config) return { status: "empty" };
   const passkeys =
     vault.version === 2 ? vault.passkeys.map(({ credentialId, label, createdAt }) => ({ credentialId, label, createdAt })) : [];
-  if (!secrets) return { status: "locked", config, passkeys };
-  return { status: "unlocked", config, secrets, passkeys };
+  if (!unlocked) return { status: "locked", config, passkeys };
+  return { status: "unlocked", config: unlocked.config, secrets: unlocked.secrets, passkeys };
 }
 
 export async function createVault(config: AccountConfig, secrets: Secrets, password: string) {
@@ -47,7 +59,7 @@ export async function createVault(config: AccountConfig, secrets: Secrets, passw
   const { vault } = await createVaultData(secrets, password);
   await vaultItem.setValue(vault);
   await configItem.setValue(config);
-  await unlockedItem.setValue(secrets);
+  await unlockedItem.setValue({ config, secrets });
 }
 
 // Recovers the DEK from any enrolled method. A v1 vault is upgraded in place
@@ -74,8 +86,10 @@ async function authorize(auth: Auth): Promise<{ vault: VaultV2; dek: DataKey }> 
 }
 
 export async function unlock(auth: Auth) {
+  const config = await configItem.getValue();
+  if (!config) throw new Error("No account");
   const { vault, dek } = await authorize(auth);
-  await unlockedItem.setValue(await openSecrets(vault, dek));
+  await unlockedItem.setValue({ config, secrets: await openSecrets(vault, dek) });
 }
 
 // Step-up check for sensitive actions while already unlocked. Recovering the
@@ -107,7 +121,7 @@ export async function updateVault(
   validateAccount(next.config, next.secrets);
   await vaultItem.setValue(await sealSecrets(vault, dek, next.secrets));
   await configItem.setValue(next.config);
-  await unlockedItem.setValue(next.secrets);
+  await unlockedItem.setValue({ config: next.config, secrets: next.secrets });
 }
 
 export async function enrollPasskey(auth: Auth, label: string) {
@@ -122,11 +136,12 @@ export async function removePasskey(auth: Auth, credentialId: string) {
 }
 
 export async function updateConfig(patch: Partial<AccountConfig>) {
-  const [config, secrets] = await Promise.all([configItem.getValue(), unlockedItem.getValue()]);
+  const [config, unlocked] = await Promise.all([configItem.getValue(), unlockedItem.getValue()]);
   if (!config) throw new Error("No account");
   const next = { ...config, ...patch };
-  if (secrets) validateAccount(next, secrets);
+  if (unlocked) validateAccount(next, unlocked.secrets);
   await configItem.setValue(next);
+  if (unlocked) await unlockedItem.setValue({ config: next, secrets: unlocked.secrets });
 }
 
 export async function wipe() {

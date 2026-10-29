@@ -1,8 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeBrowser } from "wxt/testing/fake-browser";
-import { addressOf, type AccountConfig } from "./account";
-import { createVault, enrollPasskey, loadSession, lock, removePasskey, unlock, updateConfig, updateVault, verify, wipe } from "./session";
-import { vaultItem } from "./storage";
+import { addressOf, signerKey, type AccountConfig } from "./account";
+import {
+  createVault,
+  deriveSession,
+  enrollPasskey,
+  loadSession,
+  lock,
+  removePasskey,
+  unlock,
+  updateConfig,
+  updateVault,
+  verify,
+  wipe,
+  type SessionState,
+} from "./session";
+import { configItem, unlockedItem, vaultItem } from "./storage";
 import { PasskeyMismatchError, randomBytes, toBase64, WrongPasswordError, type VaultV1 } from "./vault";
 
 // Real PBKDF2 at 600k iterations is slow in tests; keep the cipher, drop the cost.
@@ -168,6 +181,60 @@ describe("passkeys", () => {
         secrets: { masterKey: MASTER, agentKey: AGENT },
       });
     }
+  });
+});
+
+// The popup re-derives session state on every storage change. Every state it
+// can observe mid-update must be self-consistent: if unlocked, the active
+// mode's key is present. fake-browser awaits onChanged listeners inside each
+// write, so this captures each intermediate state, not just the final one.
+async function statesDuring(run: () => Promise<unknown>) {
+  const states: SessionState[] = [];
+  const read = (item: { key: string }, area: Record<string, unknown>) =>
+    (area[item.key.slice(item.key.indexOf(":") + 1)] ?? null) as never;
+  const listener = async () => {
+    const [local, session] = await Promise.all([fakeBrowser.storage.local.get(), fakeBrowser.storage.session.get()]);
+    states.push(deriveSession(read(vaultItem, local), read(configItem, local), read(unlockedItem, session)));
+  };
+  fakeBrowser.storage.onChanged.addListener(listener);
+  try {
+    await run();
+  } finally {
+    fakeBrowser.storage.onChanged.removeListener(listener);
+  }
+  return states;
+}
+
+function expectConsistent(states: SessionState[]) {
+  expect(states.length).toBeGreaterThan(0);
+  for (const s of states) {
+    if (s.status === "unlocked") expect(() => signerKey(s.config, s.secrets)).not.toThrow();
+  }
+}
+
+describe("mode switches are never observed half-applied", () => {
+  it("adding an API wallet key and switching to agent mode", async () => {
+    await createVault(config, { masterKey: MASTER }, "pw");
+    expectConsistent(
+      await statesDuring(() =>
+        updateVault(pw("pw"), (s, c) => ({ secrets: { ...s, agentKey: AGENT }, config: { ...c, mode: "agent" } })),
+      ),
+    );
+  });
+
+  it("removing the master key while switching to agent mode", async () => {
+    await createVault(config, { masterKey: MASTER, agentKey: AGENT }, "pw");
+    expectConsistent(
+      await statesDuring(() =>
+        updateVault(pw("pw"), (s, c) => ({ secrets: { agentKey: s.agentKey }, config: { ...c, mode: "agent" } })),
+      ),
+    );
+  });
+
+  it("toggling mode from settings", async () => {
+    await createVault(config, { masterKey: MASTER, agentKey: AGENT }, "pw");
+    expectConsistent(await statesDuring(() => updateConfig({ mode: "agent" })));
+    expectConsistent(await statesDuring(() => updateConfig({ mode: "master" })));
   });
 });
 

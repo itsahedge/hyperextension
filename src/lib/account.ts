@@ -42,13 +42,6 @@ export function signerKey(config: AccountConfig, secrets: Secrets): Hex {
   return key;
 }
 
-// Render-safe variant: config (local storage) and unlocked secrets (session
-// storage) are written separately, so readers can briefly observe a mode whose
-// key has not landed yet.
-export function trySignerKey(config: AccountConfig, secrets: Secrets): Hex | null {
-  return (config.mode === "master" ? secrets.masterKey : secrets.agentKey) ?? null;
-}
-
 // The vault must hold the key the active mode signs with, and a master key
 // must belong to the configured account.
 export function validateAccount(config: AccountConfig, secrets: Secrets): void {

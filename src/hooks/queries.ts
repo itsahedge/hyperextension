@@ -71,7 +71,7 @@ export function useExchange<TArgs, TResult>(
 
   return useMutation({
     mutationFn: (args: TArgs) => {
-      if (!client) throw new Error(opts.userSigned ? "This action needs the master key" : "No signing key for this mode");
+      if (!client) throw new Error("This action needs the master key");
       return action(client, args);
     },
     onSettled: () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "markets" }),

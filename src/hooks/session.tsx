@@ -1,5 +1,5 @@
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
-import { trySignerKey, type AccountConfig } from "@/lib/account";
+import { signerKey, type AccountConfig } from "@/lib/account";
 import { loadSession, type PasskeyInfo, type SessionState } from "@/lib/session";
 import { configItem, unlockedItem, vaultItem } from "@/lib/storage";
 import type { Secrets } from "@/lib/vault";
@@ -30,8 +30,7 @@ export function useSession(): SessionState {
 export interface Unlocked {
   config: AccountConfig;
   secrets: Secrets;
-  // Null only transiently while a vault update is landing; actions check it.
-  signer: ReturnType<typeof trySignerKey>;
+  signer: ReturnType<typeof signerKey>;
   canUserSign: boolean;
   passkeys: PasskeyInfo[];
 }
@@ -43,7 +42,7 @@ export function useUnlocked(): Unlocked {
   return {
     config: state.config,
     secrets: state.secrets,
-    signer: trySignerKey(state.config, state.secrets),
+    signer: signerKey(state.config, state.secrets),
     // User-signed EIP-712 actions (withdraw, usdClassTransfer, approveAgent)
     // need the master key regardless of the active signing mode.
     canUserSign: Boolean(state.secrets.masterKey),
