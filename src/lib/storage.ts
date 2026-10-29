@@ -28,6 +28,9 @@ export const prefsItem = storage.defineItem<Partial<Prefs>>("local:prefs");
 // like the keys it guards.
 export const lastActiveItem = storage.defineItem<number>("session:lastActive");
 
+// Starred market coins per network; read through lib/favorites.
+export const favoritesItem = storage.defineItem<Partial<Record<"mainnet" | "testnet", string[]>>>("local:favorites");
+
 export const vaultItem = storage.defineItem<StoredVault>("local:vault");
 export const configItem = storage.defineItem<AccountConfig>("local:config");
 // chrome.storage.session lives in memory and is cleared when the browser exits,
