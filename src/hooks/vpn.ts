@@ -2,7 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { VpnLocation, VpnMessage, VpnReply, VpnState } from "@/lib/vpn";
 
 async function send<T>(message: VpnMessage): Promise<T> {
-  const reply = (await browser.runtime.sendMessage(message)) as VpnReply<T> | undefined;
+  let reply: VpnReply<T> | undefined;
+  try {
+    reply = (await browser.runtime.sendMessage(message)) as VpnReply<T> | undefined;
+  } catch (err) {
+    // Chrome's text when no listener exists: the worker still runs a build
+    // from before the VPN, or failed to start.
+    if (/receiving end does not exist/i.test(String(err))) {
+      throw new Error("The extension's background worker is not answering. Reload the extension in chrome://extensions.");
+    }
+    throw err;
+  }
   if (!reply) throw new Error("The background worker did not answer");
   if (!reply.ok) throw new Error(reply.error);
   return reply.value;
