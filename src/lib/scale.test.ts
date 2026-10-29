@@ -14,6 +14,7 @@ const eth: Market = {
   prevDayPx: 2000,
   dayNtlVlm: 1,
   funding: 0,
+  openInterest: 1000,
 };
 
 const base = (over: Partial<ScaleInput> = {}): ScaleInput => ({

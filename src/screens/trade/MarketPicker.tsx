@@ -1,7 +1,7 @@
 import { Combobox, ComboboxButton, ComboboxInput, ComboboxOption, ComboboxOptions } from "@headlessui/react";
 import { useMemo, useState } from "react";
 import { Stat, cx } from "@/components/ui";
-import { fmtCompactUsd, fmtPct, fmtPrice, fmtRate, toneOf } from "@/lib/format";
+import { fmtCompactUsd, fmtPct, fmtPrice, fmtRate, fmtSize, toneOf } from "@/lib/format";
 import type { Market } from "@/lib/markets";
 
 export function MarketPicker({ markets, value, onChange }: { markets: Market[]; value: Market; onChange: (m: Market) => void }) {
@@ -48,11 +48,20 @@ export function MarketPicker({ markets, value, onChange }: { markets: Market[]; 
 
 export function MarketHeader({ market: m }: { market: Market }) {
   const change = m.prevDayPx ? m.markPx / m.prevDayPx - 1 : 0;
+  const isPerp = m.openInterest !== null;
   return (
-    <div className="grid grid-cols-4 gap-2 rounded-lg border border-line bg-surface p-3">
+    // Perps show five stats; content-sized columns fit them where equal
+    // columns would clip the funding rate.
+    <div className={cx("gap-2 rounded-lg border border-line bg-surface p-3", isPerp ? "flex justify-between" : "grid grid-cols-4")}>
       <Stat label="Mark" value={fmtPrice(m.markPx)} />
       <Stat label="24h" value={fmtPct(change)} tone={toneOf(change)} />
       <Stat label="Volume" value={fmtCompactUsd(m.dayNtlVlm)} />
+      {m.openInterest !== null && (
+        <Stat
+          label="Open int."
+          value={<span title={`${fmtSize(m.openInterest, 2)} ${m.name}`}>{fmtCompactUsd(m.openInterest * m.markPx)}</span>}
+        />
+      )}
       {m.funding !== null ? (
         <Stat label="Funding/h" value={fmtRate(m.funding)} tone={toneOf(m.funding)} />
       ) : (

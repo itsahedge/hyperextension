@@ -80,6 +80,11 @@ describe("buildMarkets", () => {
     expect(markets.find((m) => m.name === "PURR/USDC")?.assetId).toBe(10_000);
   });
 
+  it("parses perp open interest and leaves it null for spot", () => {
+    expect(markets.find((m) => m.coin === "BTC")?.openInterest).toBe(1);
+    expect(markets.find((m) => m.coin === "@107")?.openInterest).toBeNull();
+  });
+
   it("drops spot pairs with unknown tokens or no context", () => {
     expect(markets.some((m) => m.coin === "@500")).toBe(false);
   });
