@@ -1,6 +1,6 @@
 import { validateAccount, type AccountConfig } from "./account";
 import { assertPasskey, createPasskey } from "./passkey";
-import { configItem, unlockedItem, vaultItem, type UnlockedSession } from "./storage";
+import { configItem, lastActiveItem, unlockedItem, vaultItem, type UnlockedSession } from "./storage";
 import {
   addPasskeySlot,
   createVault as createVaultData,
@@ -59,6 +59,9 @@ export async function createVault(config: AccountConfig, secrets: Secrets, passw
   const { vault } = await createVaultData(secrets, password);
   await vaultItem.setValue(vault);
   await configItem.setValue(config);
+  // Activity first: an auto-lock check between the two writes must not see an
+  // unlocked session with no recorded activity.
+  await lastActiveItem.setValue(Date.now());
   await unlockedItem.setValue({ config, secrets });
 }
 
@@ -89,7 +92,9 @@ export async function unlock(auth: Auth) {
   const config = await configItem.getValue();
   if (!config) throw new Error("No account");
   const { vault, dek } = await authorize(auth);
-  await unlockedItem.setValue({ config, secrets: await openSecrets(vault, dek) });
+  const secrets = await openSecrets(vault, dek);
+  await lastActiveItem.setValue(Date.now());
+  await unlockedItem.setValue({ config, secrets });
 }
 
 // Step-up check for sensitive actions while already unlocked. Recovering the
@@ -102,6 +107,7 @@ export async function verify(auth: Auth) {
 
 export async function lock() {
   await unlockedItem.removeValue();
+  await lastActiveItem.removeValue();
 }
 
 type VaultChange = { secrets: Secrets; config: AccountConfig };
@@ -145,5 +151,5 @@ export async function updateConfig(patch: Partial<AccountConfig>) {
 }
 
 export async function wipe() {
-  await Promise.all([vaultItem.removeValue(), configItem.removeValue(), unlockedItem.removeValue()]);
+  await Promise.all([vaultItem.removeValue(), configItem.removeValue(), unlockedItem.removeValue(), lastActiveItem.removeValue()]);
 }

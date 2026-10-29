@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button, Modal, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
 import { useExchange } from "@/hooks/queries";
 import type { Market } from "@/lib/markets";
-import { prefsItem } from "@/lib/storage";
+import { updatePrefs } from "@/lib/prefs";
 
 export function PanelFooter({
   market,
@@ -89,7 +89,7 @@ function SlippageDialog({ open, onClose, current }: { open: boolean; onClose: ()
   const n = Number(pct);
   const invalid = !(n > 0 && n < 50);
   const save = async () => {
-    await prefsItem.setValue({ slippage: n / 100 });
+    await updatePrefs({ slippage: n / 100 });
     await queryClient.invalidateQueries({ queryKey: ["prefs"] });
     onClose();
   };
