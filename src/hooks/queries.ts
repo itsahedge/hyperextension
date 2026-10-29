@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
 import { buildMarkets, marketByCoin, usdcTokenId } from "@/lib/markets";
+import { prefsItem } from "@/lib/storage";
 import { useUnlocked } from "./session";
 
 const LIVE_MS = 5_000;
@@ -56,6 +57,52 @@ export const useLedger = () =>
     (n, user) => infoClient(n).userNonFundingLedgerUpdates({ user, startTime: Date.now() - 30 * DAY_MS }),
     HISTORY_MS,
   );
+
+// Perps only. Leverage and max trade size per side for one coin.
+export function useActiveAsset(coin: string | null) {
+  const { config } = useUnlocked();
+  return useQuery({
+    queryKey: ["activeAsset", config.network, config.address, coin],
+    queryFn: () => infoClient(config.network).activeAssetData({ user: config.address, coin: coin! }),
+    enabled: coin !== null,
+    refetchInterval: LIVE_MS,
+  });
+}
+
+export function useBook(network: Network, coin: string) {
+  return useQuery({
+    queryKey: ["book", network, coin],
+    queryFn: async () => {
+      const book = await infoClient(network).l2Book({ coin });
+      const bid = Number(book?.levels[0][0]?.px ?? 0);
+      const ask = Number(book?.levels[1][0]?.px ?? 0);
+      return { bid, ask };
+    },
+    refetchInterval: 3_000,
+  });
+}
+
+// Running TWAPs. twapHistory returns one row per status change, so keep each
+// TWAP's latest row and drop the ones that ended.
+export const useActiveTwaps = () =>
+  useAccountQuery(
+    "twaps",
+    async (n, user) => {
+      const rows = await infoClient(n).twapHistory({ user });
+      const latest = new Map<number, (typeof rows)[number]>();
+      for (const row of rows) {
+        if (row.twapId === undefined) continue;
+        const prev = latest.get(row.twapId);
+        if (!prev || row.time >= prev.time) latest.set(row.twapId, row);
+      }
+      return [...latest.values()].filter((r) => r.status.status === "activated" || r.status.status === "waitingForTrigger");
+    },
+    LIVE_MS,
+  );
+
+export function usePrefs() {
+  return useQuery({ queryKey: ["prefs"], queryFn: () => prefsItem.getValue(), staleTime: Number.POSITIVE_INFINITY });
+}
 
 export const useAgents = () => useAccountQuery("agents", (n, user) => infoClient(n).extraAgents({ user }), HISTORY_MS);
 

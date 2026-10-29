@@ -30,6 +30,20 @@ Checks: `pnpm typecheck`, `pnpm test`, `pnpm build`.
 
 Settings can generate a fresh API wallet, approve it from the master key, switch to it, and then remove the master key from the browser.
 
+## Trade panel
+
+Insilico-style order panel. Order types, Limit: Order, Stop, Scale, Scale Side; Market: Order, Stop, Swarm, TWAP. Stop, TP/SL and TWAP are perps only.
+
+- **Size**: base and USDC inputs kept in sync, MAX, slider and 25/33/50/66/75/100% presets. 100% uses Hyperliquid's max trade size for the side (perps) or free balance (spot); reduce mode caps at the position.
+- **Scale**: 2 to 50 orders between two prices, sent as one batch. Price skew bunches rungs toward the low or high price; size skew weights size toward either end (up to 4:1). Rungs that round to the same tick are merged; every rung must be at least $10; post-only refuses rungs that would cross.
+- **Scale Side**: a scale ladder anchored to the quote: longs from the bid down, shorts from the ask up, by offset and range %.
+- **Swarm**: splits a market order into 2 to 50 lots (optionally irregular) sent together.
+- **TWAP**: Hyperliquid's native TWAP, 5 minutes to 24 hours; it runs on the exchange after the popup closes.
+- **TP/SL**: attaches market TP/SL children to a limit or market entry. Hyperliquid places them only if the entry fully fills.
+- **Footer**: margin mode and leverage, and the max slippage used by market, swarm, and close orders.
+
+Partially rejected batches report each order's outcome; nothing is ever resent automatically.
+
 ## Key storage
 
 ```

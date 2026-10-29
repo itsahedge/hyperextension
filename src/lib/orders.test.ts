@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { Market } from "./markets";
-import { buildClose, buildOrder, marketPrice, placeOrder } from "./orders";
+import { buildClose, buildOrder, marketPrice } from "./orders";
+import { submitOrders } from "./placement";
+import { planScale } from "./scale";
+import { planSwarm } from "./swarm";
+import { withTpSl } from "./trigger";
+import { buildTwap } from "./twap";
 
 const btc: Market = {
   kind: "perp",
@@ -106,18 +111,51 @@ describe("no builder codes", () => {
     return { client: new ExchangeClient({ transport, wallet }), sent };
   }
 
+  const entry = () => buildOrder({ market: btc, isBuy: true, size: "0.01", type: "limit", price: "99000" });
   it.each([
-    ["market", () => buildOrder({ market: btc, isBuy: true, size: "0.01", type: "market" })],
-    ["limit", () => buildOrder({ market: btc, isBuy: false, size: "1", type: "limit", price: "105000", tif: "Alo" })],
-    ["spot", () => buildOrder({ market: hype, isBuy: true, size: "2", type: "market" })],
-    ["close", () => buildClose(btc, "-0.25")],
+    ["market", () => ({ orders: [buildOrder({ market: btc, isBuy: true, size: "0.01", type: "market" })] })],
+    ["limit", () => ({ orders: [buildOrder({ market: btc, isBuy: false, size: "1", type: "limit", price: "105000", tif: "Alo" })] })],
+    ["spot", () => ({ orders: [buildOrder({ market: hype, isBuy: true, size: "2", type: "market" })] })],
+    ["close", () => ({ orders: [buildClose(btc, "-0.25")] })],
+    [
+      "scale",
+      () => ({
+        orders: planScale({
+          market: btc,
+          isBuy: true,
+          size: { base: 0.01 },
+          priceA: 99_000,
+          priceB: 95_000,
+          count: 5,
+          priceSkew: 0,
+          sizeSkew: 0,
+          postOnly: true,
+          reduceOnly: false,
+        }).orders,
+      }),
+    ],
+    [
+      "swarm",
+      () => ({
+        orders: planSwarm({ market: btc, isBuy: true, size: 0.01, lots: 3, irregular: true, slippage: 0.01, reduceOnly: false }).orders,
+      }),
+    ],
+    ["tp/sl", () => withTpSl(btc, entry(), 99_000, { tp: 110_000, sl: 90_000 })],
   ])("%s order payload has no builder field", async (_name, make) => {
     const { client, sent } = capturingClient();
-    await placeOrder(client, make());
+    const { orders, grouping } = make() as { orders: ReturnType<typeof entry>[]; grouping?: "na" | "normalTpsl" };
+    await submitOrders(client, orders, grouping);
     expect(sent).toHaveLength(1);
     const { action } = sent[0]!.payload;
     expect(action.type).toBe("order");
     expect(action).not.toHaveProperty("builder");
+    expect(JSON.stringify(sent[0]!.payload)).not.toMatch(/"builder"/);
+  });
+
+  it("twap payload has no builder field", async () => {
+    const { client, sent } = capturingClient();
+    await client.twapOrder(buildTwap({ market: btc, isBuy: true, size: "0.01", minutes: 30, randomize: false, reduceOnly: false })).catch(() => {});
+    expect(sent).toHaveLength(1);
     expect(JSON.stringify(sent[0]!.payload)).not.toMatch(/"builder"/);
   });
 
