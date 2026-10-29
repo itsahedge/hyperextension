@@ -235,6 +235,7 @@ export function ConfirmDialog({
   title,
   children,
   confirmLabel,
+  dismissLabel = "Cancel",
   variant = "primary",
   onConfirm,
 }: {
@@ -243,6 +244,7 @@ export function ConfirmDialog({
   title: string;
   children: ReactNode;
   confirmLabel: string;
+  dismissLabel?: string;
   variant?: ButtonVariant;
   onConfirm: () => Promise<unknown>;
 }) {
@@ -269,7 +271,7 @@ export function ConfirmDialog({
         {error && <Notice tone="error">{error}</Notice>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
+            {dismissLabel}
           </Button>
           <Button variant={variant} onClick={confirm} busy={busy}>
             {confirmLabel}

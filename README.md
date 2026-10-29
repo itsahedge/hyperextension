@@ -83,7 +83,7 @@ Batches report each order's outcome when Hyperliquid rejects some of them; nothi
 
 ## Orders
 
-Open orders include stops and TP/SL; position TP/SL show as "Position" (Hyperliquid reports their size as 0). Cancel one order, everything listed, or everything for one market; multi-order cancels confirm first and go out as one batched request. History shows the latest closed orders from `historicalOrders` (Hyperliquid returns at most 2000) with filled, canceled, and rejected filters and readable rejection reasons.
+Open orders include stops and TP/SL; position TP/SL show as "Position" (Hyperliquid reports their size as 0). Narrow the list by market, side (buy/sell), and kind (limit/trigger); in the all-markets view orders are grouped by market. The bulk cancel button acts only on the orders shown and names them, e.g. "Cancel 10 sell orders · KNTQ/USDC"; each market group has its own cancel. Multi-order cancels show a breakdown, confirm first, and go out as one batched request. History shows the latest closed orders from `historicalOrders` (Hyperliquid returns at most 2000) with filled, canceled, and rejected filters and readable rejection reasons.
 
 ## Key storage
 

@@ -56,7 +56,7 @@ function OpenView({ byCoin, coin, setCoin }: ViewProps) {
   const active = coin !== null && coins.includes(coin) ? coin : null;
   return (
     <>
-      {coins.length > 1 && <MarketFilter value={active} onChange={setCoin} coins={coins} counts={countBy(rows)} byCoin={byCoin} />}
+      {coins.length > 0 && <MarketFilter value={active} onChange={setCoin} coins={coins} counts={countBy(rows)} byCoin={byCoin} />}
       <OpenOrdersList byCoin={byCoin} coin={active} />
       <ActiveTwaps byCoin={byCoin} />
     </>
@@ -97,7 +97,7 @@ function HistoryView({ byCoin, coin, setCoin }: ViewProps) {
 
   return (
     <>
-      {coins.length > 1 && <MarketFilter value={coin} onChange={setCoin} coins={coins} counts={countBy(withCoin)} byCoin={byCoin} />}
+      {coins.length > 0 && <MarketFilter value={coin} onChange={setCoin} coins={coins} counts={countBy(withCoin)} byCoin={byCoin} />}
       <Segmented label="Status" value={group} onChange={setGroup} options={GROUPS} />
       <Card title={`History (${rows.length})`}>
         {rows.length === 0 ? (
