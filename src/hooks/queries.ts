@@ -50,7 +50,12 @@ export const useOpenOrders = () =>
 export const useOrderHistory = () =>
   useAccountQuery("orderHistory", (n, user) => infoClient(n).historicalOrders({ user }), HISTORY_MS);
 
-export const useFills = () => useAccountQuery("fills", (n, user) => infoClient(n).userFills({ user }), HISTORY_MS);
+// aggregateByTime merges the partial fills of an order that crossed several
+// resting orders into one row (size summed, size-weighted price), so a trade
+// reads like its order. A resting order filled by takers in different blocks
+// still shows one row per block. At most the 2000 most recent fills.
+export const useFills = () =>
+  useAccountQuery("fills", (n, user) => infoClient(n).userFills({ user, aggregateByTime: true }), HISTORY_MS);
 
 export const useFunding = () =>
   useAccountQuery(
