@@ -1,0 +1,4 @@
+# Refuse package versions published less than 7 days ago (minutes). Malicious
+# or broken releases are usually caught and pulled within days; this extension
+# holds private keys, so new versions wait out that window.
+minimumReleaseAge: 10080
