@@ -7,6 +7,7 @@ import { useUnlocked } from "@/hooks/session";
 import { fmtUsd } from "@/lib/format";
 import { freeBalance } from "@/lib/markets";
 import { verify } from "@/lib/session";
+import { DepositCard } from "./wallet/DepositCard";
 import { assertWithdrawDestination, withdrawDestinations } from "@/lib/withdraw";
 
 export function Wallet() {
@@ -33,11 +34,15 @@ export function Wallet() {
 
       <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
 
+      <DepositCard />
       <TransferCard spotFree={spotUsdcFree} perpFree={Number(perp.data.withdrawable)} usdcToken={markets.data?.usdcToken} />
       <WithdrawCard withdrawable={Number(perp.data.withdrawable)} />
 
-      <Card title="Receive">
-        <p className="mb-2 text-xs text-muted">Deposit with the Hyperliquid app or bridge. This extension does not bridge.</p>
+      <Card title="Hyperliquid address">
+        <p className="mb-2 text-xs text-muted">
+          For USDC and tokens sent from another Hyperliquid account. Sending USDC to this address on Arbitrum does not
+          deposit it; use Deposit above.
+        </p>
         <CopyAddress address={config.address} />
       </Card>
     </div>

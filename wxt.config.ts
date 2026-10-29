@@ -16,6 +16,11 @@ export default defineConfig({
     host_permissions: [
       "https://api.hyperliquid.xyz/*",
       "https://api.hyperliquid-testnet.xyz/*",
+      // USDC deposits via Circle CCTP: Arbitrum RPC and Circle's fee API.
+      "https://arb1.arbitrum.io/*",
+      "https://sepolia-rollup.arbitrum.io/*",
+      "https://iris-api.circle.com/*",
+      "https://iris-api-sandbox.circle.com/*",
     ],
   },
 });

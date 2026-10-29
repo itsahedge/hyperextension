@@ -9,7 +9,7 @@ Personal Hyperliquid trading extension for Chrome. Single user, no backend: the 
 | Portfolio | Total value, perp equity, spot value, unrealized PnL, margin; spot balances; perp positions with market close |
 | Trade | Insilico-style order panel (see [Trade panel](#trade-panel)); favorite markets; open orders for the selected market |
 | Orders | Open orders and active TWAPs, order history with status filters, market filter, cancel one / all / by market |
-| Wallet | Perp and spot balances, spot↔perp USDC transfer, withdraw to Arbitrum, deposit address |
+| Wallet | Perp and spot balances, USDC deposit from Arbitrum (CCTP), spot↔perp USDC transfer, withdraw to Arbitrum, Hyperliquid address |
 | Activity | Fills, funding payments (7 days), transfers and other ledger updates (30 days) |
 | Settings | Network, signing mode, passkeys, API wallet create/import, remove master key, lock, reset |
 
@@ -82,6 +82,23 @@ Order types, Limit: Order, Stop, Scale, Scale Side; Market: Order, Stop, Swarm, 
 - **Footer**: margin mode and leverage, and the max slippage used by market, swarm, and close orders.
 
 Batches report each order's outcome when Hyperliquid rejects some of them; nothing is ever resent automatically.
+
+## Deposits
+
+USDC deposits use Circle CCTP, which Hyperliquid's docs name as the preferred route (the old Arbitrum bridge is deprecated):
+
+```
+ sign EIP-3009 ReceiveWithAuthorization (USDC -> CctpExtension)
+   -> CctpExtension.batchDepositForBurnWithAuth   (one Arbitrum tx, gas in ETH)
+   -> burn on Arbitrum (domain 3), mint on HyperEVM (domain 19)
+   -> CctpForwarder hook -> this account's HyperCore perps or spot balance
+```
+
+- Needs the master key and a little ETH on Arbitrum (Arbitrum Sepolia on testnet). Circle charges a flat 0.20 USDC forwarding fee (fetched live); the confirmation shows the minimum amount that arrives.
+- Contract addresses come from Circle's "HyperCore CCTP-enablement contract addresses" and "USDC contract addresses" pages (`src/lib/cctp.ts`). Circle warns that a wrong mint recipient or destination caller strands funds permanently, so `assertDepositSafe` re-checks both, the recipient, and the hook data right before signing, and the call is simulated before it is sent.
+- The USDC EIP-712 domain (name/version) is read from the token contract at send time.
+- The "Hyperliquid address" card is for transfers from other Hyperliquid accounts; sending USDC to it on Arbitrum does not deposit.
+- BTC/ETH/SOL deposits via Unit Protocol are not included: Unit's terms list the United States and United Kingdom as prohibited jurisdictions and it geofences its API.
 
 ## Orders
 
