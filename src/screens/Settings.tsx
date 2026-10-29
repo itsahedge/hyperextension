@@ -1,11 +1,15 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { generatePrivateKey } from "viem/accounts";
 import { AuthorizeDialog } from "@/components/AuthorizeDialog";
 import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
-import { useAgents, useExchange } from "@/hooks/queries";
+import { useAgents, useExchange, usePrefs } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { addressOf, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
+import { AUTO_LOCK_CHOICES } from "@/lib/autolock";
 import { fmtTime, shortAddress } from "@/lib/format";
+import { updatePrefs } from "@/lib/prefs";
+import { addAllowed, MAX_LABEL, removeAllowed, type AllowedAddress } from "@/lib/withdraw";
 import { enrollPasskey, lock, removePasskey, updateConfig, updateVault, wipe, type Auth } from "@/lib/session";
 
 // Hyperliquid caps API wallet expiry at 180 days and names at 16 characters.
@@ -18,6 +22,7 @@ export function Settings() {
     <div className="flex flex-col gap-3">
       <AccountCard />
       <PasskeyCard />
+      <WithdrawAllowlistCard />
       <AgentCard />
       <SecurityCard />
     </div>
@@ -319,14 +324,137 @@ function PasskeyCard() {
   );
 }
 
+function WithdrawAllowlistCard() {
+  const { config, secrets } = useUnlocked();
+  const list = secrets.withdrawAllowlist ?? [];
+  const [address, setAddress] = useState("");
+  const [label, setLabel] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<AllowedAddress | null>(null);
+
+  const startAdd = () => {
+    setFormError(null);
+    try {
+      addAllowed(list, config.address, { address, label });
+      setAdding(true);
+    } catch (err) {
+      setFormError(errorMessage(err));
+    }
+  };
+
+  return (
+    <Card title="Withdrawal addresses">
+      <div className="flex flex-col gap-3">
+        <p className="text-[11px] text-faint">
+          Withdrawals can only go to this account's address or one listed here. Adding or removing an address needs your
+          passkey or password.
+        </p>
+        <ul className="flex flex-col gap-1.5 text-xs">
+          <li className="flex items-center gap-2">
+            <span className="font-medium">This account</span>
+            <span className="font-mono text-faint">{shortAddress(config.address)}</span>
+            <Badge>Always</Badge>
+          </li>
+          {list.map((a) => (
+            <li key={a.address} className="flex items-center gap-2">
+              <span className="font-medium">{a.label}</span>
+              <span className="font-mono text-faint" title={a.address}>
+                {shortAddress(a.address)}
+              </span>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setRemoving(a)}>
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-col gap-2 border-t border-line pt-3">
+          <TextField label="Address" spellCheck={false} autoComplete="off" placeholder="0x…" value={address} onChange={(e) => setAddress(e.target.value)} />
+          <TextField label="Label" maxLength={MAX_LABEL} placeholder="Cold wallet" value={label} onChange={(e) => setLabel(e.target.value)} error={formError} />
+          <Button disabled={!address || !label} onClick={startAdd}>
+            Add address
+          </Button>
+        </div>
+      </div>
+      <AuthorizeDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        title="Add withdrawal address"
+        description={
+          <>
+            Allow withdrawals to <span className="font-mono break-all text-fg">{address.trim()}</span> ({label.trim()}).
+            Check it character by character; withdrawals to it cannot be reversed.
+          </>
+        }
+        confirmLabel="Add"
+        onAuthorized={(auth) =>
+          updateVault(auth, (s, c) => ({
+            secrets: { ...s, withdrawAllowlist: addAllowed(s.withdrawAllowlist ?? [], c.address, { address, label }) },
+            config: c,
+          })).then(() => {
+            setAddress("");
+            setLabel("");
+          })
+        }
+      />
+      <AuthorizeDialog
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        title={`Remove "${removing?.label ?? ""}"`}
+        description="Withdrawals to this address will be blocked."
+        confirmLabel="Remove"
+        onAuthorized={(auth) =>
+          updateVault(auth, (s, c) => ({
+            secrets: { ...s, withdrawAllowlist: removeAllowed(s.withdrawAllowlist ?? [], removing!.address) },
+            config: c,
+          }))
+        }
+      />
+    </Card>
+  );
+}
+
+const lockLabel = (m: number) => (m === 0 ? "Never" : m >= 60 ? `${m / 60}h` : `${m}m`);
+
 function SecurityCard() {
   const [resetOpen, setResetOpen] = useState(false);
+  const prefs = usePrefs();
+  const queryClient = useQueryClient();
+  const save = async (patch: Parameters<typeof updatePrefs>[0]) => {
+    await updatePrefs(patch);
+    await queryClient.invalidateQueries({ queryKey: ["prefs"] });
+  };
+  const minutes = prefs.data?.autoLockMinutes;
+
   return (
     <Card title="Security">
-      <div className="flex flex-col gap-2">
-        <p className="text-[11px] text-faint">
-          Keys stay decrypted in memory until you lock or the browser closes.
-        </p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-muted">Auto-lock after inactivity</span>
+          {prefs.data && (
+            <Segmented
+              label="Auto-lock timeout"
+              value={String(minutes)}
+              onChange={(v) => void save({ autoLockMinutes: Number(v) })}
+              options={AUTO_LOCK_CHOICES.map((m) => ({ value: String(m), label: lockLabel(m) }))}
+            />
+          )}
+          <p className="text-[11px] text-faint">
+            {minutes === 0
+              ? "Keys stay unlocked until you lock or the browser closes."
+              : `Locks ${minutes ? lockLabel(minutes) : "…"} after your last click or keypress in the popup; unlock again with a passkey or password.`}
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={prefs.data?.lockOnScreenLock ?? true}
+            disabled={!prefs.data}
+            onChange={(e) => void save({ lockOnScreenLock: e.target.checked })}
+            className="size-3.5 accent-(--color-accent)"
+          />
+          Lock when the screen locks
+        </label>
         <div className="flex gap-2">
           <Button className="flex-1" onClick={() => void lock()}>
             Lock now

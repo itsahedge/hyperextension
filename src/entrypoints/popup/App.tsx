@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Badge, Button, cx } from "@/components/ui";
+import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
 import { shortAddress } from "@/lib/format";
 import { lock } from "@/lib/session";
@@ -75,6 +76,7 @@ export function App() {
 
 function Shell() {
   const { config } = useUnlocked();
+  useActivityTracker();
   const [tab, setTab] = useState<TabId>("portfolio");
   const { Screen } = TABS.find((t) => t.id === tab)!;
 

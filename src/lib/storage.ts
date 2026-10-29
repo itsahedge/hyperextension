@@ -14,9 +14,19 @@ export interface UnlockedSession {
 export interface Prefs {
   // Market-order slippage cap as a fraction (0.01 = 1%).
   slippage: number;
+  // Lock after this many minutes without popup activity; 0 = never.
+  autoLockMinutes: number;
+  // Lock as soon as the OS reports the screen locked (chrome.idle "locked").
+  lockOnScreenLock: boolean;
 }
 
-export const prefsItem = storage.defineItem<Prefs>("local:prefs", { fallback: { slippage: 0.01 } });
+// Stored prefs may predate newer fields; read through loadPrefs, which fills
+// defaults, and write through updatePrefs, which merges.
+export const prefsItem = storage.defineItem<Partial<Prefs>>("local:prefs");
+
+// Timestamp (ms) of the last popup interaction while unlocked. Session-scoped
+// like the keys it guards.
+export const lastActiveItem = storage.defineItem<number>("session:lastActive");
 
 export const vaultItem = storage.defineItem<StoredVault>("local:vault");
 export const configItem = storage.defineItem<AccountConfig>("local:config");
