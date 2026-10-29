@@ -76,7 +76,7 @@ Order types, Limit: Order, Stop, Scale, Scale Side; Market: Order, Stop, Swarm, 
 - **Swarm**: splits a market order into 2 to 50 lots (optionally irregular) sent together.
 - **TWAP**: Hyperliquid's native TWAP, 5 minutes to 24 hours; it runs on the exchange after the popup closes.
 - **TP/SL**: attaches market TP/SL children to a limit or market entry. Hyperliquid places them only if the entry fully fills.
-- **Long / Short buttons** preview exactly what each side will send.
+- **Side toggle**: pick Buy/Long or Sell/Short first; everything below (max size, slider, previews, warnings, Available) describes that side only, and one submit button sends it, previewing exactly what it will send. Warnings name the side and the price they cross, e.g. "All 10 buy orders are at or above the best ask".
 - **Footer**: margin mode and leverage, and the max slippage used by market, swarm, and close orders.
 
 Batches report each order's outcome when Hyperliquid rejects some of them; nothing is ever resent automatically.
@@ -95,8 +95,10 @@ Open orders include stops and TP/SL; position TP/SL show as "Position" (Hyperliq
 
 - The vault (`chrome.storage.local`) holds only ciphertext. Any slot recovers the same random data key (DEK).
 - Unlocking decrypts the secrets into `chrome.storage.session`, which is memory-only and cleared when the browser exits. **Lock** clears it immediately; closing the popup does not.
+- **Auto-lock** (Settings → Security): locks after 5, 15 (default), 30, or 60 minutes without a click or keypress in the popup, or never. A background worker checks every 30 seconds via `chrome.alarms`, and opening the popup enforces an expired timeout immediately. With **Lock when the screen locks** on (default), `chrome.idle` reporting `locked` locks it at once.
+- **Withdrawal allowlist** (Settings → Withdrawal addresses): withdrawals can only go to this account's address or an allowlisted one; there is no free-text destination. The list is sealed inside the encrypted vault, so adding or removing an address requires a passkey or password, and the destination is rechecked against it at send time.
 - Withdrawals and key changes (approve/import API wallet, remove master key, add/remove passkeys) re-authorize with a passkey or the password even while unlocked.
-- Host permissions are limited to `api.hyperliquid.xyz` and `api.hyperliquid-testnet.xyz`.
+- Permissions: `storage`, `alarms` and `idle` (auto-lock); host permissions only for `api.hyperliquid.xyz` and `api.hyperliquid-testnet.xyz`.
 
 ## Passkeys
 
@@ -110,6 +112,7 @@ This is a personal tool: no order carries a Hyperliquid builder code (the per-or
 
 ## Notes
 
+- **Dependency release delay.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, so pnpm refuses package versions published less than 7 days ago (including transitive ones). To take an urgent fix sooner, add the package to `minimumReleaseAgeExclude` for that install.
 - **viem is pinned to `2.57.11`.** viem `2.57.12` rejects EIP-712 struct names containing `:`, and Hyperliquid's user-signed types are named like `HyperliquidTransaction:Withdraw`, so withdraw, transfers, and API wallet approval fail to sign. `src/lib/signing.test.ts` fails if an upgrade reintroduces this.
 - **Max size per side** comes from `activeAssetData.maxTradeSzs`. Hyperliquid does not document the index order; buy-then-sell is inferred from live data and only sizes the slider and MAX. The exchange validates every order.
 - **TWAP duration** is capped at 24 hours by the SDK's request schema, although Hyperliquid's docs allow up to 7 days.

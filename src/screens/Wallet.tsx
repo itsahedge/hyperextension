@@ -4,10 +4,10 @@ import { SpotBalancesCard } from "@/components/SpotBalances";
 import { Button, Card, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
 import { useExchange, useMarketData, usePerpState, useSpotState } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
-import { parseAddress } from "@/lib/account";
 import { fmtUsd } from "@/lib/format";
 import { freeBalance } from "@/lib/markets";
 import { verify } from "@/lib/session";
+import { assertWithdrawDestination, withdrawDestinations } from "@/lib/withdraw";
 
 export function Wallet() {
   const { config } = useUnlocked();
@@ -115,7 +115,9 @@ function TransferCard({ spotFree, perpFree, usdcToken }: { spotFree: number; per
 }
 
 function WithdrawCard({ withdrawable }: { withdrawable: number }) {
-  const { config, canUserSign } = useUnlocked();
+  const { config, secrets, canUserSign } = useUnlocked();
+  const allowlist = secrets.withdrawAllowlist ?? [];
+  const destinations = withdrawDestinations(config.address, allowlist);
   const [amount, setAmount] = useState("");
   const [destination, setDestination] = useState<string>(config.address);
   const [confirming, setConfirming] = useState(false);
@@ -125,13 +127,9 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
   );
 
   const amountError = validAmount(amount, withdrawable);
-  let destError: string | null = null;
-  try {
-    parseAddress(destination);
-  } catch {
-    destError = "Invalid address";
-  }
-  const external = destination.trim().toLowerCase() !== config.address.toLowerCase();
+  // The selected entry can disappear if it is removed from the allowlist.
+  const selected = destinations.find((d) => d.address === destination) ?? destinations[0]!;
+  const external = selected.address !== config.address;
 
   if (!canUserSign) {
     return (
@@ -146,7 +144,7 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (!amountError && !destError && amount) setConfirming(true);
+          if (!amountError && amount) setConfirming(true);
         }}
         className="flex flex-col gap-3"
       >
@@ -158,17 +156,24 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
           error={amountError}
           hint={`Withdrawable ${fmtUsd(withdrawable)}`}
         />
-        <TextField
-          label="Destination"
-          spellCheck={false}
-          value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          error={destError}
-          hint={external ? "Not this account's address. Double-check it." : "This account's address on Arbitrum"}
-        />
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">Destination</span>
+          <select
+            value={selected.address}
+            onChange={(e) => setDestination(e.target.value)}
+            className="h-9 rounded-md border border-line bg-surface px-2 text-xs outline-none focus:border-accent"
+          >
+            {destinations.map((d) => (
+              <option key={d.address} value={d.address}>
+                {d.label} · {d.address.slice(0, 6)}…{d.address.slice(-4)}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-faint">Only allowlisted addresses. Add more in Settings → Withdrawal addresses.</span>
+        </label>
         {withdraw.isError && <Notice tone="error">{errorMessage(withdraw.error)}</Notice>}
         {withdraw.isSuccess && <Notice tone="success">Withdrawal requested. It usually finalizes in about 5 minutes.</Notice>}
-        <Button type="submit" variant="primary" disabled={!amount || Boolean(amountError) || Boolean(destError)}>
+        <Button type="submit" variant="primary" disabled={!amount || Boolean(amountError)}>
           Review withdrawal
         </Button>
       </form>
@@ -178,11 +183,12 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
         title="Confirm withdrawal"
         confirmLabel="Withdraw"
         onAuthorized={async (auth) => {
+          const to = assertWithdrawDestination(selected.address, config.address, allowlist);
           await verify(auth);
-          await withdraw.mutateAsync({ amount: amount.trim(), destination: parseAddress(destination) });
+          await withdraw.mutateAsync({ amount: amount.trim(), destination: to });
           setAmount("");
         }}
-        description={<WithdrawSummary amount={amount} destination={destination} external={external} />}
+        description={<WithdrawSummary amount={amount} destination={`${selected.label} (${selected.address})`} external={external} />}
       />
     </Card>
   );
@@ -196,7 +202,7 @@ function WithdrawSummary({ amount, destination, external }: { amount: string; de
         <span className="font-mono break-all text-fg">{destination.trim()}</span> on Arbitrum.
       </p>
       <p className="mt-2">Hyperliquid charges a $1 withdrawal fee. Signed with the master key.</p>
-      {external && <p className="mt-2 text-warn">This is not your account address.</p>}
+      {external && <p className="mt-2 text-warn">This is an allowlisted address, not this account.</p>}
     </>
   );
 }

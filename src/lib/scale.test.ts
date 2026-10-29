@@ -100,8 +100,15 @@ describe("planScale", () => {
     const book = { bid: 1949, ask: 1950 };
     const plan = planScale(base({ book }));
     expect(plan.crossing).toBe(3); // 1950, 1975, 2000 are at/through the ask
-    expect(plan.warnings.join()).toMatch(/cross the book/);
-    expect(() => planScale(base({ book, postOnly: true }))).toThrow(/Post-only would be rejected: 3/);
+    expect(plan.warnings).toContain("3 of 5 buy orders are at or above the best ask (1950) and fill immediately as taker instead of resting");
+    expect(() => planScale(base({ book, postOnly: true }))).toThrow("Post-only would be rejected: 3 of 5 buy orders are at or above the best ask (1950)");
+  });
+
+  it("names the sell side and the bid when sell rungs cross", () => {
+    const plan = planScale(base({ isBuy: false, book: { bid: 2500, ask: 2501 } }));
+    expect(plan.warnings).toContain("All 5 sell orders are at or below the best bid (2500) and fill immediately as taker instead of resting");
+    // A sell ladder above the market rests: no warning.
+    expect(planScale(base({ isBuy: false, book: { bid: 1800, ask: 1801 } })).warnings).toEqual([]);
   });
 
   it("uses ALO for post-only and only marks perps reduce-only", () => {

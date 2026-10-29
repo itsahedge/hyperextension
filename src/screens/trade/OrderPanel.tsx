@@ -1,8 +1,8 @@
 import type { ExchangeClient } from "@nktkas/hyperliquid";
 import { useEffect, useState } from "react";
-import { Card, Notice, cx, errorMessage } from "@/components/ui";
+import { Card, Notice, Segmented, cx, errorMessage } from "@/components/ui";
 import { useActiveAsset, useExchange, usePerpState, usePrefs, useSpotState } from "@/hooks/queries";
-import { maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState } from "@/lib/entry";
+import { maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState, type Side } from "@/lib/entry";
 import { fmtPrice, fmtSize, fmtUsd } from "@/lib/format";
 import { freeBalance, type Market } from "@/lib/markets";
 import { describeSummary, submitOrders, type PlacementSummary } from "@/lib/placement";
@@ -72,12 +72,18 @@ export function OrderPanel({
     spotQuote: spotFree(quoteToken),
     spotBase: spotFree(baseToken),
   });
-  const sliderMax = Math.max(maxes.buy, maxes.sell);
-  const available = isPerp ? Number(perp.data?.withdrawable ?? 0) : spotFree(quoteToken);
+  const isBuy = s.side === "buy";
+  const sideMax = isBuy ? maxes.buy : maxes.sell;
+  // Perps: free margin. Spot: what this side spends (USDC to buy, the token to sell).
+  const available = isPerp
+    ? fmtUsd(Number(perp.data?.withdrawable ?? 0))
+    : isBuy
+      ? `${fmtSize(spotFree(quoteToken))} ${quoteToken}`
+      : `${fmtSize(spotFree(baseToken))} ${baseToken}`;
 
-  const buy = tryPlan(s, ctx, true);
-  const sell = tryPlan(s, ctx, false);
-  const shown = buy.plan ?? sell.plan;
+  const attempt = tryPlan(s, ctx, isBuy);
+  const shown = attempt.plan;
+  const overMax = shown !== null && shown.preview.size > sideMax * 1.0001;
   const ladder: LadderView | null =
     shown && shown.kind === "orders" && (s.type === "scale" || s.type === "scaleSide")
       ? (() => {
@@ -87,25 +93,25 @@ export function OrderPanel({
       : null;
 
   const [lastError, setLastError] = useState<string | null>(null);
-  const submit = useExchange((client, v: { plan: EntryPlan; isBuy: boolean }) => execute(client, v.plan));
-  // A result belongs to the order that produced it; clear it when the order
-  // type or market changes.
+  const submit = useExchange((client, plan: EntryPlan) => execute(client, plan));
+  // A result belongs to the order that produced it; clear it when the side,
+  // order type, or market changes.
   const { reset } = submit;
   useEffect(() => {
     reset();
     setLastError(null);
-  }, [s.type, market.coin, reset]);
+  }, [s.side, s.type, market.coin, reset]);
 
-  const place = (isBuy: boolean) => {
+  const place = () => {
     submit.reset();
-    const attempt = isBuy ? buy : sell;
     if (!attempt.plan) {
       setLastError(attempt.error);
       return;
     }
     setLastError(null);
-    submit.mutate({ plan: attempt.plan, isBuy });
+    submit.mutate(attempt.plan);
   };
+  const sideLabel = (side: Side) => (side === "buy" ? (isPerp ? "Long" : "Buy") : isPerp ? "Short" : "Sell");
 
   const fields = { s, set, market, book: ctx.book };
   const tpslAllowed = isPerp && TPSL_TYPES.includes(s.type);
@@ -115,8 +121,18 @@ export function OrderPanel({
   return (
     <Card>
       <div className="flex flex-col gap-3">
+        <Segmented
+          label="Side"
+          value={s.side}
+          onChange={(side) => set({ side })}
+          tone={(v) => (v === "buy" ? "bg-up/20! text-up!" : "bg-down/20! text-down!")}
+          options={[
+            { value: "buy", label: sideLabel("buy") },
+            { value: "sell", label: sideLabel("sell") },
+          ]}
+        />
         <OrderTypeMenu value={s.type} onChange={(type) => set({ type })} market={market} />
-        <SizeControl market={market} size={s.size} onSize={(size) => set({ size })} refPx={refPx} max={sliderMax} />
+        <SizeControl market={market} size={s.size} onSize={(size) => set({ size })} refPx={refPx} max={sideMax} />
 
         {s.type === "limit" && <LimitFields {...fields} />}
         {s.type === "limitStop" && <StopFields {...fields} withLimit />}
@@ -143,28 +159,20 @@ export function OrderPanel({
             </Toggle>
           )}
         </div>
-        {tpslAllowed && s.tpsl && <TpSlFields s={s} set={set} refPx={refPx} limitEntry={s.type === "limit"} />}
+        {tpslAllowed && s.tpsl && <TpSlFields s={s} set={set} refPx={refPx} limitEntry={s.type === "limit"} isBuy={isBuy} />}
 
-        <div className="grid grid-cols-2 gap-2">
-          <SideButton
-            label={isPerp ? "Long" : "Buy"}
-            tone="up"
-            sub={previewLabel(buy.plan, s)}
-            over={buy.plan !== null && buy.plan.preview.size > maxes.buy * 1.0001}
-            busy={submit.isPending && submit.variables?.isBuy === true}
-            disabled={submit.isPending}
-            onClick={() => place(true)}
-          />
-          <SideButton
-            label={isPerp ? "Short" : "Sell"}
-            tone="down"
-            sub={previewLabel(sell.plan, s)}
-            over={sell.plan !== null && sell.plan.preview.size > maxes.sell * 1.0001}
-            busy={submit.isPending && submit.variables?.isBuy === false}
-            disabled={submit.isPending}
-            onClick={() => place(false)}
-          />
-        </div>
+        {overMax && (
+          <Notice tone="warn">
+            Size is over your max for this side ({fmtSize(sideMax)} {baseToken}). Hyperliquid will likely reject it.
+          </Notice>
+        )}
+        <SubmitButton
+          label={`${sideLabel(s.side)} ${baseToken}`}
+          tone={isBuy ? "up" : "down"}
+          sub={previewLabel(shown, s)}
+          busy={submit.isPending}
+          onClick={place}
+        />
 
         {lastError && <Notice tone="error">{lastError}</Notice>}
         {submit.isError && <Notice tone="error">{errorMessage(submit.error)}</Notice>}
@@ -174,7 +182,7 @@ export function OrderPanel({
 
         <div className="grid grid-cols-2 gap-2">
           <Box label="Total" value={shown ? fmtUsd(shown.preview.notional) : "—"} />
-          <Box label="Available" value={fmtUsd(available)} />
+          <Box label="Available" value={available} />
         </div>
         <PanelFooter market={market} leverage={asset.data?.leverage} slippage={slippage} />
       </div>
@@ -182,36 +190,20 @@ export function OrderPanel({
   );
 }
 
-function SideButton({
-  label,
-  tone,
-  sub,
-  over,
-  busy,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  tone: "up" | "down";
-  sub: string;
-  over: boolean;
-  busy: boolean;
-  disabled: boolean;
-  onClick: () => void;
-}) {
+function SubmitButton({ label, tone, sub, busy, onClick }: { label: string; tone: "up" | "down"; sub: string; busy: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
+      disabled={busy}
       aria-busy={busy || undefined}
       className={cx(
         "flex flex-col items-center gap-0.5 rounded-md py-2.5 font-semibold tracking-wide uppercase transition-[filter] duration-150 hover:brightness-110 disabled:opacity-60",
-        tone === "up" ? "bg-up/25 text-up" : "bg-down/25 text-down",
+        tone === "up" ? "bg-up text-bg" : "bg-down text-bg",
       )}
     >
       <span className="text-sm">{busy ? "Sending…" : label}</span>
-      <span className={cx("text-[10px] font-normal normal-case tabular-nums", over ? "text-warn" : "text-fg/70")}>{over ? `${sub} · over max` : sub}</span>
+      <span className="text-[11px] font-normal normal-case tabular-nums">{sub}</span>
     </button>
   );
 }

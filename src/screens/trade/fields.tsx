@@ -113,8 +113,8 @@ export function ScaleSideFields({ s, set, ladder }: FieldProps & { ladder: Ladde
           }
         />
       </div>
-      <p className="-mt-2 text-[10px] text-faint">Longs ladder down from the bid, shorts up from the ask.</p>
-      <LadderControls s={s} set={set} ladder={ladder} caption="Long ladder shown; the short mirrors it above the ask." />
+      <p className="-mt-2 text-[10px] text-faint">{s.side === "buy" ? "Ladders down from the best bid." : "Ladders up from the best ask."}</p>
+      <LadderControls s={s} set={set} ladder={ladder} />
     </div>
   );
 }
@@ -127,7 +127,7 @@ export interface LadderView {
   warnings: string[];
 }
 
-function LadderControls({ s, set, ladder, caption }: { s: PanelState; set: Set; ladder: LadderView | null; caption?: string }) {
+function LadderControls({ s, set, ladder }: { s: PanelState; set: Set; ladder: LadderView | null }) {
   return (
     <div className="flex flex-col gap-3">
       <CountSlider label="Total orders" value={s.count} min={MIN_SCALE_ORDERS} max={MAX_SCALE_ORDERS} onChange={(count) => set({ count })} />
@@ -135,7 +135,6 @@ function LadderControls({ s, set, ladder, caption }: { s: PanelState; set: Set; 
         <SkewSlider label="Price skew" value={s.priceSkew} onChange={(priceSkew) => set({ priceSkew })} lowLabel="Low" highLabel="High" />
         <SkewSlider label="Size skew" value={s.sizeSkew} onChange={(sizeSkew) => set({ sizeSkew })} lowLabel="Low" highLabel="High" />
         <LadderPreview ladder={ladder} />
-        {caption && ladder && <p className="text-[10px] text-faint">{caption}</p>}
       </div>
       {ladder?.warnings.map((w) => (
         <p key={w} className="text-[11px] text-warn">
@@ -221,7 +220,7 @@ export function TwapFields({ s, set }: FieldProps) {
   );
 }
 
-export function TpSlFields({ s, set, refPx, limitEntry }: { s: PanelState; set: Set; refPx: number; limitEntry: boolean }) {
+export function TpSlFields({ s, set, refPx, limitEntry, isBuy }: { s: PanelState; set: Set; refPx: number; limitEntry: boolean; isBuy: boolean }) {
   const pct = (v: string) => {
     const n = Number(v);
     return n > 0 && refPx > 0 ? `${(((n - refPx) / refPx) * 100).toFixed(2)}%` : undefined;
@@ -229,8 +228,8 @@ export function TpSlFields({ s, set, refPx, limitEntry }: { s: PanelState; set: 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex gap-2">
-        <NumberBox label="Take profit" value={s.tp} onChange={(tp) => set({ tp })} action={<span className="text-[10px] text-faint">{pct(s.tp)}</span>} placeholder="Price" />
-        <NumberBox label="Stop loss" value={s.sl} onChange={(sl) => set({ sl })} action={<span className="text-[10px] text-faint">{pct(s.sl)}</span>} placeholder="Price" />
+        <NumberBox label={isBuy ? "Take profit (above)" : "Take profit (below)"} value={s.tp} onChange={(tp) => set({ tp })} action={<span className="text-[10px] text-faint">{pct(s.tp)}</span>} placeholder="Price" />
+        <NumberBox label={isBuy ? "Stop loss (below)" : "Stop loss (above)"} value={s.sl} onChange={(sl) => set({ sl })} action={<span className="text-[10px] text-faint">{pct(s.sl)}</span>} placeholder="Price" />
       </div>
       <p className="text-[10px] text-faint">
         Market triggers on the mark price, up to 10% slippage, sized to the entry.

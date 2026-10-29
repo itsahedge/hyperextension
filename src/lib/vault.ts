@@ -1,8 +1,12 @@
 import type { Hex } from "viem";
+import type { AllowedAddress } from "./withdraw";
 
+// Everything sealed in the vault. The allowlist is not secret, but sealing it
+// means only an authorized updateVault can change it.
 export interface Secrets {
   masterKey?: Hex;
   agentKey?: Hex;
+  withdrawAllowlist?: AllowedAddress[];
 }
 
 // Envelope layout (v2):
