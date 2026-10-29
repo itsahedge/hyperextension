@@ -89,7 +89,8 @@ export class VpnController {
     try {
       return (await this.request({ type: "servers" })).servers ?? [];
     } finally {
-      if (opened && !this.info) this.close();
+      // Another request (e.g. an up started meanwhile) may share the port.
+      if (opened && !this.info && this.pending.size === 0) this.close();
     }
   }
 

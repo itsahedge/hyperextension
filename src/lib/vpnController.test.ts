@@ -15,7 +15,8 @@ const ZURICH: VpnLocation = {
 };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-type Helper = (msg: Record<string, unknown>) => Record<string, unknown> | "exit" | "silent";
+type HelperResult = Record<string, unknown> | "exit" | "silent";
+type Helper = (msg: Record<string, unknown>) => HelperResult | Promise<HelperResult>;
 
 // A fake Chrome: native ports answered by `helper`, PAC scripts recorded.
 function harness(helper: Helper, opts: { settings?: VpnSettings; missing?: boolean } = {}) {
@@ -45,8 +46,9 @@ function harness(helper: Helper, opts: { settings?: VpnSettings; missing?: boole
         const msg = m as Record<string, unknown>;
         sent.push(msg);
         if (opts.missing) return;
-        queueMicrotask(() => {
-          const r = helper(msg);
+        queueMicrotask(async () => {
+          const r = await helper(msg);
+          if (!open) return;
           if (r === "exit") close();
           else if (r !== "silent") onMessage.forEach((cb) => cb({ id: msg.id, type: msg.type, ...r }));
         });
@@ -146,6 +148,33 @@ describe("VpnController", () => {
     await on.vpn.init();
     expect(on.routedTo()).toBe(BLOCKED_PROXY);
     expect(on.connects()).toBe(0);
+  });
+
+  it("a server listing finishing mid-connect does not stop the helper", async () => {
+    let releaseServers!: () => void;
+    let releaseUp!: () => void;
+    const serversGate = new Promise<void>((r) => (releaseServers = r));
+    const upGate = new Promise<void>((r) => (releaseUp = r));
+    const h = harness(async (m) => {
+      if (m.type === "servers") {
+        await serversGate;
+        return { servers: [ZURICH] };
+      }
+      if (m.type === "up") await upGate;
+      return healthy(m);
+    });
+    const listing = h.vpn.servers();
+    const connecting = h.vpn.up(CONF);
+    await tick();
+    expect(h.sent.map((m) => m.type)).toEqual(["servers", "up"]);
+    // The listing finishes while up is still waiting on the helper.
+    releaseServers();
+    expect(await listing).toEqual([ZURICH]);
+    releaseUp();
+    const state = await connecting;
+    expect(state.error).toBeUndefined();
+    expect(state.connected).toBe(true);
+    expect(h.connects()).toBe(1);
   });
 
   it("lists servers without leaving the helper running", async () => {

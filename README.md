@@ -156,7 +156,8 @@ Setup, once:
 
 ```bash
 pnpm vpn:install   # builds native/ into ~/Library/Application Support/Hyperextension/hx-vpn
-                   # and registers it for this extension ID only
+                   # and registers it for this extension ID only, in every installed
+                   # Chrome and Brave (or pass one browser user-data-dir)
 ```
 
 Then paste a wg-quick `.conf` (for example from your IVPN account) in Settings > VPN. It is sealed in the vault like the signing keys and sent to the helper only when connecting. Any IVPN WireGuard server can be picked from IVPN's public list; only the peer key and address change.
