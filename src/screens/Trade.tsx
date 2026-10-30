@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Empty, Loading, Notice, Segmented, errorMessage } from "@/components/ui";
-import { useBook, useFavorites, useMarketData } from "@/hooks/queries";
+import { useBook, useFavorites, useLiveMarketCtx, useMarketData } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { clearedInputs, initialPanel, ORDER_TYPES, type PanelState } from "@/lib/entry";
 import type { Market, MarketKind } from "@/lib/markets";
@@ -90,5 +90,6 @@ export function Trade() {
 function PanelWithBook({ market, panel, setPanel }: { market: Market; panel: PanelState; setPanel: (f: (p: PanelState) => PanelState) => void }) {
   const { config } = useUnlocked();
   const book = useBook(config.network, market.coin);
+  useLiveMarketCtx(config.network, market);
   return <OrderPanel market={market} book={book.data} s={panel} set={(patch) => setPanel((p) => ({ ...p, ...patch }))} />;
 }

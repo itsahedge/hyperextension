@@ -25,8 +25,6 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-// Data also polls on its own (account every 5s, markets every 10s, history
-// every 30s); this forces the current screen's queries to refetch now.
 // Opens the app in the browser's side panel for this window (full window
 // height; the popup is capped at 600px). sidePanel.open must run inside the
 // click's user gesture, so the window ID is looked up beforehand.
@@ -57,6 +55,8 @@ function SidePanelButton() {
   );
 }
 
+// Live data streams over websocket feeds and the rest polls on its own
+// (hooks/queries.ts); this forces the current screen's queries to refetch now.
 function RefreshButton() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);

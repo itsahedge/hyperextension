@@ -1,6 +1,6 @@
 import type { MetaAndAssetCtxsResponse, SpotMetaAndAssetCtxsResponse } from "@nktkas/hyperliquid/api/info";
 import { describe, expect, it } from "vitest";
-import { buildMarkets, freeBalance, spotHoldings, spotTokenPrice, spotUsdValue, usdcTokenId } from "./markets";
+import { buildMarkets, freeBalance, marketByCoin, spotHoldings, spotTokenPrice, spotUsdValue, usdcTokenId, withLiveCtx } from "./markets";
 
 const perpCtx = (markPx: string, dayNtlVlm: string) => ({
   prevDayPx: markPx,
@@ -168,5 +168,29 @@ describe("freeBalance", () => {
 describe("usdcTokenId", () => {
   it("formats NAME:tokenId", () => {
     expect(usdcTokenId(spot[0])).toBe(`USDC:0x${"0".repeat(32)}`);
+  });
+});
+
+describe("withLiveCtx", () => {
+  const markets = buildMarkets(perp, spot);
+  const data = { markets, byCoin: marketByCoin(markets) };
+
+  it("updates only the pushed market's prices, keeping its identity fields", () => {
+    const btc = data.byCoin.get("BTC")!;
+    const next = withLiveCtx(data, "BTC", { ...perpCtx("101000", "5000000"), funding: "0.0001", openInterest: "7" });
+    const live = next.byCoin.get("BTC")!;
+    expect(live).toMatchObject({ kind: "perp", assetId: btc.assetId, szDecimals: btc.szDecimals, markPx: 101000, dayNtlVlm: 5000000, funding: 0.0001, openInterest: 7 });
+    expect(next.markets.find((m) => m.coin === "BTC")).toBe(live);
+    expect(next.byCoin.get("ETH")).toBe(data.byCoin.get("ETH"));
+  });
+
+  it("keeps spot markets without funding or open interest", () => {
+    const hype = markets.find((m) => m.kind === "spot")!;
+    const next = withLiveCtx(data, hype.coin, { ...perpCtx("42", "1"), funding: "0.5", openInterest: "9" });
+    expect(next.byCoin.get(hype.coin)).toMatchObject({ markPx: 42, funding: null, openInterest: null });
+  });
+
+  it("ignores coins it does not know", () => {
+    expect(withLiveCtx(data, "NOPE", perpCtx("1", "1"))).toBe(data);
   });
 });

@@ -40,12 +40,7 @@ export function buildMarkets(
       assetId: index,
       szDecimals: asset.szDecimals,
       maxLeverage: asset.maxLeverage,
-      markPx: Number(ctx.markPx),
-      midPx: ctx.midPx === null ? null : Number(ctx.midPx),
-      prevDayPx: Number(ctx.prevDayPx),
-      dayNtlVlm: Number(ctx.dayNtlVlm),
-      funding: Number(ctx.funding),
-      openInterest: Number(ctx.openInterest),
+      ...priceFields("perp", ctx),
     });
   });
 
@@ -64,17 +59,45 @@ export function buildMarkets(
       assetId: SPOT_ASSET_OFFSET + pair.index,
       szDecimals: base.szDecimals,
       maxLeverage: null,
-      markPx: Number(ctx.markPx),
-      midPx: ctx.midPx === null ? null : Number(ctx.midPx),
-      prevDayPx: Number(ctx.prevDayPx),
-      dayNtlVlm: Number(ctx.dayNtlVlm),
-      funding: null,
-      openInterest: null,
+      ...priceFields("spot", ctx),
     });
   }
 
   const byVolume = (a: Market, b: Market) => b.dayNtlVlm - a.dayNtlVlm;
   return [...perps.sort(byVolume), ...spots.sort(byVolume)];
+}
+
+// The price fields of a perp or spot asset context (info and websocket share
+// the shape); funding and open interest exist for perps only.
+interface PriceCtx {
+  markPx: string;
+  midPx: string | null;
+  prevDayPx: string;
+  dayNtlVlm: string;
+  funding?: string;
+  openInterest?: string;
+}
+
+function priceFields(kind: MarketKind, ctx: PriceCtx) {
+  return {
+    markPx: Number(ctx.markPx),
+    midPx: ctx.midPx === null ? null : Number(ctx.midPx),
+    prevDayPx: Number(ctx.prevDayPx),
+    dayNtlVlm: Number(ctx.dayNtlVlm),
+    funding: kind === "perp" ? Number(ctx.funding) : null,
+    openInterest: kind === "perp" ? Number(ctx.openInterest) : null,
+  };
+}
+
+// Applies one market's live context (activeAssetCtx / activeSpotAssetCtx feed)
+// between full market refreshes. Unchanged markets keep their identity.
+export function withLiveCtx<T extends { markets: Market[]; byCoin: Map<string, Market> }>(data: T, coin: string, ctx: PriceCtx): T {
+  const prev = data.byCoin.get(coin);
+  if (!prev) return data;
+  const next = { ...prev, ...priceFields(prev.kind, ctx) };
+  const byCoin = new Map(data.byCoin);
+  byCoin.set(coin, next);
+  return { ...data, markets: data.markets.map((m) => (m.coin === coin ? next : m)), byCoin };
 }
 
 // Token identifier for sendAsset-style actions: "NAME:0x<tokenId>".
