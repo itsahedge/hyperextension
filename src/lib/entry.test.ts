@@ -86,9 +86,13 @@ describe("planEntry", () => {
     expect(plan).toMatchObject({ kind: "twap", params: { twap: { a: 1, b: true, s: "1", m: 60, t: true, r: false } } });
   });
 
+  it("twap on spot: spot asset id, never reduce-only", () => {
+    const plan = planEntry(panel({ type: "twap", size: "10", minutes: 30, reduce: true }), { ...ctx, market: hype }, true);
+    expect(plan).toMatchObject({ kind: "twap", params: { twap: { a: 10_107, b: true, s: "10", m: 30, r: false } } });
+  });
+
   it("refuses perp-only types on spot and never marks spot reduce-only", () => {
     const spotCtx = { ...ctx, market: hype };
-    expect(() => planEntry(panel({ type: "twap", size: "10" }), spotCtx, true)).toThrow(/perps only/);
     expect(() => planEntry(panel({ type: "marketStop", size: "10", trigger: "45" }), spotCtx, true)).toThrow(/perps only/);
     const plan = planEntry(panel({ type: "limit", size: "1", price: "40", reduce: true }), spotCtx, true);
     if (plan.kind !== "orders") throw new Error("expected orders");

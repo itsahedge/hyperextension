@@ -18,7 +18,7 @@ export const ORDER_TYPES: { group: "Limit" | "Market"; id: OrderTypeId; label: s
   { group: "Market", id: "market", label: "Order" },
   { group: "Market", id: "marketStop", label: "Stop", perpOnly: true },
   { group: "Market", id: "swarm", label: "Swarm" },
-  { group: "Market", id: "twap", label: "TWAP", perpOnly: true },
+  { group: "Market", id: "twap", label: "TWAP" },
 ];
 
 // TP/SL attaches to single entries only; Hyperliquid's parent/child grouping
