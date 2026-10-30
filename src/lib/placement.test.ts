@@ -2,7 +2,7 @@ import { ExchangeClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { OrderSpec } from "./orders";
-import { describeSummary, MAX_BATCH_ORDERS, placementHeadline, submitOrders, type PlacementSummary } from "./placement";
+import { describeSummary, MAX_BATCH_ORDERS, orderToast, placementHeadline, submitOrders, type PlacementSummary } from "./placement";
 
 type Action = { type: string; orders: OrderSpec[] };
 
@@ -93,5 +93,26 @@ describe("placementHeadline", () => {
     expect(placementHeadline(summary({ total: 450, resting: 200, notSent: 250 }))).toEqual({ tone: "warn", title: "200 of 450 orders submitted", placed: true });
     expect(placementHeadline(summary({ total: 1, errors: ["Post only order would have immediately matched"] }))).toEqual({ tone: "error", title: "Order rejected", placed: false });
     expect(placementHeadline(summary({ total: 5, errors: Array(5).fill("x") }))).toEqual({ tone: "error", title: "5 orders rejected", placed: false });
+  });
+});
+
+describe("orderToast", () => {
+  const summary = (over: Partial<PlacementSummary>): PlacementSummary => ({ total: 1, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], notSent: 0, ...over });
+
+  it("titles the toast with the verdict and market, details in the body", () => {
+    expect(orderToast(summary({ total: 1, filled: 1, filledSize: 18165.7, filledAvgPx: 0.512013 }), "KNTQ/USDC")).toEqual({
+      tone: "success",
+      title: "Order submitted on KNTQ/USDC",
+      body: "1 filled (18,165.7 @ 0.512013)",
+    });
+    expect(orderToast(summary({ total: 100, resting: 40, errors: Array(60).fill("Insufficient margin") }), "BTC")).toMatchObject({
+      tone: "warn",
+      title: "40 of 100 orders submitted on BTC",
+    });
+    expect(orderToast(summary({ total: 1, errors: ["Post only order would have immediately matched"] }), "BTC")).toEqual({
+      tone: "error",
+      title: "Order rejected on BTC",
+      body: "1 rejected: Post only order would have immediately matched",
+    });
   });
 });

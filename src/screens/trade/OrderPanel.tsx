@@ -1,11 +1,12 @@
 import type { ExchangeClient } from "@nktkas/hyperliquid";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useToast } from "@/components/Toaster";
 import { Card, Notice, Segmented, cx, errorMessage } from "@/components/ui";
 import { useActiveAsset, useExchange, usePerpState, usePrefs, useSpotState } from "@/hooks/queries";
 import { clearedInputs, maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState, type Side } from "@/lib/entry";
 import { fmtPrice, fmtSize, fmtUsd } from "@/lib/format";
 import { freeBalance, type Market } from "@/lib/markets";
-import { describeSummary, placementHeadline, submitOrders, type PlacementSummary } from "@/lib/placement";
+import { orderToast, placementHeadline, submitOrders, type PlacementSummary } from "@/lib/placement";
 import { OrderTypeMenu, SizeControl, Toggle } from "./controls";
 import { LimitFields, ScaleFields, ScaleSideFields, StopFields, SwarmFields, TpSlFields, TwapFields, type LadderView } from "./fields";
 import { PanelFooter } from "./footer";
@@ -93,6 +94,7 @@ export function OrderPanel({
       : null;
 
   const [lastError, setLastError] = useState<string | null>(null);
+  const toast = useToast();
   // Remounts the size control, whose USD box keeps its own draft text, when
   // the inputs are cleared after a submit.
   const [cleared, setCleared] = useState(0);
@@ -112,8 +114,14 @@ export function OrderPanel({
       return;
     }
     setLastError(null);
+    const marketName = market.name;
     submit.mutate(attempt.plan, {
       onSuccess: (out) => {
+        toast(
+          out.kind === "twap"
+            ? { tone: "success", title: `TWAP started on ${marketName}`, body: `Running as #${out.twapId}.` }
+            : orderToast(out.summary, marketName),
+        );
         // Something reached the book: clear the amounts and prices so the form
         // no longer describes an order that is already placed.
         if (out.kind === "twap" || placementHeadline(out.summary).placed) {
@@ -121,18 +129,13 @@ export function OrderPanel({
           setCleared((n) => n + 1);
         }
       },
+      onError: (err) => toast({ tone: "error", title: `Order not submitted on ${marketName}`, body: errorMessage(err) }),
     });
   };
   const sideLabel = (side: Side) => (side === "buy" ? (isPerp ? "Long" : "Buy") : isPerp ? "Short" : "Sell");
 
   const fields = { s, set, market, book: ctx.book };
   const tpslAllowed = isPerp && TPSL_TYPES.includes(s.type);
-  const outcome = submit.data;
-  // The result renders below the submit button, often under the fold.
-  const outcomeRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (outcome) outcomeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [outcome]);
 
   return (
     <Card>
@@ -191,12 +194,6 @@ export function OrderPanel({
         />
 
         {lastError && <Notice tone="error">{lastError}</Notice>}
-        {submit.isError && <Notice tone="error">{errorMessage(submit.error)}</Notice>}
-        {outcome && (
-          <div ref={outcomeRef}>
-            <OutcomeNotice outcome={outcome} marketName={market.name} />
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-2">
           <Box label="Total" value={shown ? fmtUsd(shown.preview.notional) : "—"} />
@@ -205,26 +202,6 @@ export function OrderPanel({
         <PanelFooter market={market} leverage={asset.data?.leverage} slippage={slippage} />
       </div>
     </Card>
-  );
-}
-
-function OutcomeNotice({ outcome, marketName }: { outcome: Outcome; marketName: string }) {
-  if (outcome.kind === "twap") {
-    return (
-      <Notice tone="success">
-        <strong className="block">TWAP started on {marketName}</strong>
-        Running as #{outcome.twapId}.
-      </Notice>
-    );
-  }
-  const { tone, title } = placementHeadline(outcome.summary);
-  return (
-    <Notice tone={tone}>
-      <strong className="block">
-        {title} on {marketName}
-      </strong>
-      {describeSummary(outcome.summary)}
-    </Notice>
   );
 }
 

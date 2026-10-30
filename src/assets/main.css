@@ -65,3 +65,10 @@
     animation-duration: 0ms !important;
   }
 }
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}

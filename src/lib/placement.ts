@@ -145,6 +145,13 @@ export function placementHeadline(s: PlacementSummary): { tone: "success" | "war
   return { tone: "success", title: `${orders(s.total)} submitted`, placed: true };
 }
 
+// Toast content for a submit: the verdict and market as the title, the
+// per-order breakdown as the body.
+export function orderToast(s: PlacementSummary, marketName: string): { tone: "success" | "warn" | "error"; title: string; body: string } {
+  const { tone, title } = placementHeadline(s);
+  return { tone, title: `${title} on ${marketName}`, body: describeSummary(s) };
+}
+
 export function describeSummary(s: PlacementSummary): string {
   const parts: string[] = [];
   if (s.filled) parts.push(`${s.filled} filled (${trim(s.filledSize)} @ ${trim(s.filledAvgPx)})`);
