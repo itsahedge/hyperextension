@@ -153,9 +153,15 @@ function VpnBadge() {
   const vpn = useVpnState();
   if (!vpn.data?.enabled) return null;
   if (!vpn.data.connected) return <Badge tone="down">VPN down</Badge>;
-  // The verified exit (ipinfo through the tunnel), else the picked server.
+  // The IVPN server picked in Settings, as IVPN names it. Only for the .conf's
+  // own server, fall back to ipinfo's geolocation of the exit IP, which can
+  // differ (Holon, Tel Aviv vs Petah_Tiqva) and uses underscores.
   const { exit, location } = vpn.data;
-  const where = exit ? [exit.city, exit.country].filter(Boolean).join(", ") : location ? `${location.city}, ${location.countryCode}` : "";
+  const where = location
+    ? `${location.city}, ${location.countryCode}`
+    : exit
+      ? [exit.city?.replaceAll("_", " "), exit.country].filter(Boolean).join(", ")
+      : "";
   const label = where ? `VPN · ${where}` : "VPN";
   // Shrinks with an ellipsis when the header is crowded (e.g. testnet); full text on hover.
   return (
