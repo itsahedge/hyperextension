@@ -1,11 +1,11 @@
 import type { ExchangeClient } from "@nktkas/hyperliquid";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, Notice, Segmented, cx, errorMessage } from "@/components/ui";
 import { useActiveAsset, useExchange, usePerpState, usePrefs, useSpotState } from "@/hooks/queries";
-import { maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState, type Side } from "@/lib/entry";
+import { clearedInputs, maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState, type Side } from "@/lib/entry";
 import { fmtPrice, fmtSize, fmtUsd } from "@/lib/format";
 import { freeBalance, type Market } from "@/lib/markets";
-import { describeSummary, submitOrders, type PlacementSummary } from "@/lib/placement";
+import { describeSummary, placementHeadline, submitOrders, type PlacementSummary } from "@/lib/placement";
 import { OrderTypeMenu, SizeControl, Toggle } from "./controls";
 import { LimitFields, ScaleFields, ScaleSideFields, StopFields, SwarmFields, TpSlFields, TwapFields, type LadderView } from "./fields";
 import { PanelFooter } from "./footer";
@@ -93,6 +93,9 @@ export function OrderPanel({
       : null;
 
   const [lastError, setLastError] = useState<string | null>(null);
+  // Remounts the size control, whose USD box keeps its own draft text, when
+  // the inputs are cleared after a submit.
+  const [cleared, setCleared] = useState(0);
   const submit = useExchange((client, plan: EntryPlan) => execute(client, plan));
   // A result belongs to the order that produced it; clear it when the side,
   // order type, or market changes.
@@ -109,15 +112,27 @@ export function OrderPanel({
       return;
     }
     setLastError(null);
-    submit.mutate(attempt.plan);
+    submit.mutate(attempt.plan, {
+      onSuccess: (out) => {
+        // Something reached the book: clear the amounts and prices so the form
+        // no longer describes an order that is already placed.
+        if (out.kind === "twap" || placementHeadline(out.summary).placed) {
+          set(clearedInputs());
+          setCleared((n) => n + 1);
+        }
+      },
+    });
   };
   const sideLabel = (side: Side) => (side === "buy" ? (isPerp ? "Long" : "Buy") : isPerp ? "Short" : "Sell");
 
   const fields = { s, set, market, book: ctx.book };
   const tpslAllowed = isPerp && TPSL_TYPES.includes(s.type);
   const outcome = submit.data;
-  const failed = outcome?.kind === "orders" ? outcome.summary.errors.length + outcome.summary.notSent : 0;
-  const outcomeTone = outcome?.kind === "orders" && failed ? (failed === outcome.summary.total ? "error" : "warn") : "success";
+  // The result renders below the submit button, often under the fold.
+  const outcomeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (outcome) outcomeRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [outcome]);
 
   return (
     <Card>
@@ -133,7 +148,7 @@ export function OrderPanel({
           ]}
         />
         <OrderTypeMenu value={s.type} onChange={(type) => set({ type })} market={market} />
-        <SizeControl market={market} size={s.size} onSize={(size) => set({ size })} refPx={refPx} max={sideMax} />
+        <SizeControl key={`${market.coin}:${cleared}`} market={market} size={s.size} onSize={(size) => set({ size })} refPx={refPx} max={sideMax} />
 
         {s.type === "limit" && <LimitFields {...fields} />}
         {s.type === "limitStop" && <StopFields {...fields} withLimit />}
@@ -178,7 +193,9 @@ export function OrderPanel({
         {lastError && <Notice tone="error">{lastError}</Notice>}
         {submit.isError && <Notice tone="error">{errorMessage(submit.error)}</Notice>}
         {outcome && (
-          <Notice tone={outcomeTone}>{outcome.kind === "twap" ? `TWAP running (#${outcome.twapId})` : describeSummary(outcome.summary)}</Notice>
+          <div ref={outcomeRef}>
+            <OutcomeNotice outcome={outcome} marketName={market.name} />
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-2">
@@ -188,6 +205,26 @@ export function OrderPanel({
         <PanelFooter market={market} leverage={asset.data?.leverage} slippage={slippage} />
       </div>
     </Card>
+  );
+}
+
+function OutcomeNotice({ outcome, marketName }: { outcome: Outcome; marketName: string }) {
+  if (outcome.kind === "twap") {
+    return (
+      <Notice tone="success">
+        <strong className="block">TWAP started on {marketName}</strong>
+        Running as #{outcome.twapId}.
+      </Notice>
+    );
+  }
+  const { tone, title } = placementHeadline(outcome.summary);
+  return (
+    <Notice tone={tone}>
+      <strong className="block">
+        {title} on {marketName}
+      </strong>
+      {describeSummary(outcome.summary)}
+    </Notice>
   );
 }
 

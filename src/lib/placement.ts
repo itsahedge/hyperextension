@@ -134,6 +134,17 @@ export function assertAccepted(s: PlacementSummary): PlacementSummary {
   return s;
 }
 
+// The one-line verdict shown after submitting. `placed` is true when any order
+// reached the book (resting, filled or waiting), which is when the order form
+// is cleared so a second click cannot send a duplicate.
+export function placementHeadline(s: PlacementSummary): { tone: "success" | "warn" | "error"; title: string; placed: boolean } {
+  const placed = s.resting + s.filled + s.waiting;
+  const orders = (n: number) => (n === 1 ? "Order" : `${n} orders`);
+  if (placed === 0) return { tone: "error", title: `${orders(s.total)} rejected`, placed: false };
+  if (placed < s.total) return { tone: "warn", title: `${placed} of ${s.total} orders submitted`, placed: true };
+  return { tone: "success", title: `${orders(s.total)} submitted`, placed: true };
+}
+
 export function describeSummary(s: PlacementSummary): string {
   const parts: string[] = [];
   if (s.filled) parts.push(`${s.filled} filled (${trim(s.filledSize)} @ ${trim(s.filledAvgPx)})`);
