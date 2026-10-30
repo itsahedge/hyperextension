@@ -61,7 +61,7 @@ export function coinsOf(rows: { coin: string }[]): string[] {
   return [...new Set(rows.map((r) => r.coin))];
 }
 
-export type StatusGroup = "open" | "filled" | "triggered" | "canceled" | "rejected";
+export type StatusGroup = "open" | "filled" | "partial" | "triggered" | "canceled" | "rejected";
 
 // Hyperliquid OrderProcessingStatus values: "open", "filled", "canceled",
 // "triggered", "rejected", plus specific reasons ending in "Canceled" or
@@ -90,7 +90,21 @@ function humanize(camel: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-// History rows that are no longer open, newest first.
-export function closedHistory(rows: HistoricalOrder[]): HistoricalOrder[] {
-  return rows.filter((r) => r.status !== "open").sort((a, b) => b.statusTimestamp - a.statusTimestamp);
+// A history row's status, plus how much of the order traded. A market order
+// stopped by its slippage cap reports "filled" with the unfilled rest still
+// in sz; that is a partial fill.
+export function historyStatus(row: HistoricalOrder): ReturnType<typeof statusInfo> & { filled: number } {
+  const left = Number(row.order.sz);
+  const filled = Number(row.order.origSz) - left;
+  if (row.status === "filled" && left > 0) return { group: "partial", label: "Partial", reason: null, filled };
+  return { ...statusInfo(row.status), filled };
+}
+
+// Closed orders that did not fully fill (canceled, rejected, triggered, or
+// partly filled), newest first. Fully filled orders are left to the fills
+// list, which has the actual prices.
+export function unfilledHistory(rows: HistoricalOrder[]): HistoricalOrder[] {
+  return rows
+    .filter((r) => r.status !== "open" && !(r.status === "filled" && Number(r.order.sz) === 0))
+    .sort((a, b) => b.statusTimestamp - a.statusTimestamp);
 }
