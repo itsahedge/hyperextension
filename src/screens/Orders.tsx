@@ -7,7 +7,7 @@ import { useMarketData, useOpenOrders, useOrderHistory } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { fmtPrice, fmtSize, fmtTime } from "@/lib/format";
 import type { Market } from "@/lib/markets";
-import { closedHistory, coinsOf, filterByCoin, statusInfo, type StatusGroup } from "@/lib/orderList";
+import { coinsOf, filterByCoin, historyStatus, unfilledHistory, type StatusGroup } from "@/lib/orderList";
 
 const HISTORY_LIMIT = 200;
 
@@ -63,9 +63,10 @@ function OpenView({ byCoin, coin, setCoin }: ViewProps) {
   );
 }
 
-const GROUPS: { value: "all" | StatusGroup; label: string }[] = [
+type GroupFilter = "all" | "canceled" | "rejected";
+
+const GROUPS: { value: GroupFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "filled", label: "Filled" },
   { value: "canceled", label: "Canceled" },
   { value: "rejected", label: "Rejected" },
 ];
@@ -73,6 +74,7 @@ const GROUPS: { value: "all" | StatusGroup; label: string }[] = [
 const TONES: Record<StatusGroup, "up" | "down" | "neutral" | "accent" | "warn"> = {
   open: "accent",
   filled: "up",
+  partial: "warn",
   triggered: "accent",
   canceled: "neutral",
   rejected: "down",
@@ -80,34 +82,30 @@ const TONES: Record<StatusGroup, "up" | "down" | "neutral" | "accent" | "warn"> 
 
 function HistoryView({ byCoin, coin, setCoin }: ViewProps) {
   const history = useOrderHistory();
-  const [group, setGroup] = useState<"all" | StatusGroup>("all");
-  const closed = useMemo(() => closedHistory(history.data ?? []), [history.data]);
+  const [group, setGroup] = useState<GroupFilter>("all");
+  const closed = useMemo(() => unfilledHistory(history.data ?? []), [history.data]);
   const withCoin = useMemo(() => closed.map((h) => ({ ...h, coin: h.order.coin })), [closed]);
 
   if (history.isPending) return <Loading />;
   if (history.isError) return <Notice tone="error">{errorMessage(history.error)}</Notice>;
 
   const coins = coinsOf(withCoin);
-  const rows = filterByCoin(withCoin, coin).filter((h) => {
-    if (group === "all") return true;
-    const g = statusInfo(h.status).group;
-    // Triggered orders became live orders; group them with filled for filtering.
-    return group === "filled" ? g === "filled" || g === "triggered" : g === group;
-  });
+  const rows = filterByCoin(withCoin, coin).filter((h) => group === "all" || historyStatus(h).group === group);
 
   return (
     <>
       {coins.length > 0 && <MarketFilter value={coin} onChange={setCoin} coins={coins} counts={countBy(withCoin)} byCoin={byCoin} />}
       <Segmented label="Status" value={group} onChange={setGroup} options={GROUPS} />
+      <p className="-mt-1 px-1 text-[11px] text-faint">Orders that did not fully fill. Fills and their prices are in Activity → Trade History.</p>
       <Card title={`History (${rows.length})`}>
         {rows.length === 0 ? (
           <Empty>No orders</Empty>
         ) : (
           <ul className="flex flex-col divide-y divide-line">
-            {rows.slice(0, HISTORY_LIMIT).map(({ order: o, status, statusTimestamp }) => {
-              const info = statusInfo(status);
+            {rows.slice(0, HISTORY_LIMIT).map((h) => {
+              const { order: o, statusTimestamp } = h;
+              const info = historyStatus(h);
               const isBuy = o.side === "B";
-              const filled = Number(o.origSz) - Number(o.sz);
               return (
                 <li key={`${o.oid}-${statusTimestamp}`} className="flex items-start gap-2 py-2 text-xs first:pt-0 last:pb-0">
                   <Badge tone={isBuy ? "up" : "down"}>{isBuy ? "Buy" : "Sell"}</Badge>
@@ -117,8 +115,8 @@ function HistoryView({ byCoin, coin, setCoin }: ViewProps) {
                       {o.reduceOnly && <span className="text-muted"> · reduce</span>}
                     </span>
                     <span className="text-muted tabular-nums">
-                      {fmtSize(o.origSz)} @ {o.isTrigger ? `trigger ${fmtPrice(o.triggerPx)}` : fmtPrice(o.limitPx)}
-                      {filled > 0 && info.group !== "filled" && ` · ${fmtSize(filled)} filled`}
+                      {info.filled > 0 ? `${fmtSize(info.filled)} / ${fmtSize(o.origSz)} filled` : fmtSize(o.origSz)} ·{" "}
+                      {o.isTrigger ? `trigger ${fmtPrice(o.triggerPx)}` : `limit ${fmtPrice(o.limitPx)}`}
                     </span>
                     {info.reason && <span className="text-faint">{info.reason}</span>}
                   </div>

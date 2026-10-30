@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 import type { Market } from "./markets";
 import {
   cancelTargets,
-  closedHistory,
+  historyStatus,
   coinsOf,
   filterByCoin,
   filterOrders,
   groupByCoin,
   scopeLabel,
   statusInfo,
+  unfilledHistory,
   type HistoricalOrder,
   type OpenOrder,
 } from "./orderList";
@@ -104,14 +105,33 @@ describe("statusInfo", () => {
   });
 });
 
-describe("closedHistory", () => {
-  it("drops open rows and sorts newest first", () => {
+const row = (status: string, statusTimestamp: number, origSz: string, sz: string) =>
+  ({ status, statusTimestamp, order: { origSz, sz } }) as unknown as HistoricalOrder;
+
+describe("unfilledHistory", () => {
+  it("keeps orders that did not fully fill, newest first", () => {
     const rows = [
-      { status: "filled", statusTimestamp: 1 },
-      { status: "open", statusTimestamp: 5 },
-      { status: "canceled", statusTimestamp: 3 },
-    ] as HistoricalOrder[];
-    expect(closedHistory(rows).map((r) => r.statusTimestamp)).toEqual([3, 1]);
+      row("filled", 1, "10", "0.0"), // fully filled: in Trade History instead
+      row("open", 5, "10", "10"),
+      row("canceled", 3, "10", "10"),
+      row("filled", 4, "28073.23", "20244.81"), // market order cut off by its slippage cap
+      row("canceled", 2, "10", "4"), // limit partly filled, then canceled
+      row("perpMarginRejected", 6, "10", "10"),
+    ];
+    expect(unfilledHistory(rows).map((r) => r.statusTimestamp)).toEqual([6, 4, 3, 2]);
+  });
+});
+
+describe("historyStatus", () => {
+  it("labels a filled order with size left over as a partial fill", () => {
+    expect(historyStatus(row("filled", 1, "28073.23", "20244.81"))).toMatchObject({ group: "partial", label: "Partial" });
+    expect(historyStatus(row("filled", 1, "10", "0.0"))).toMatchObject({ group: "filled", label: "Filled" });
+    expect(historyStatus(row("marginCanceled", 1, "10", "4"))).toMatchObject({ group: "canceled", reason: "Margin" });
+  });
+
+  it("reports filled vs ordered size when part of the order traded", () => {
+    expect(historyStatus(row("filled", 1, "28073.23", "20244.81")).filled).toBeCloseTo(7828.42, 6);
+    expect(historyStatus(row("canceled", 1, "10", "10")).filled).toBe(0);
   });
 });
 
