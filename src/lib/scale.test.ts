@@ -120,10 +120,29 @@ describe("planScale", () => {
   });
 
   it("validates count and prices", () => {
-    expect(() => planScale(base({ count: 1 }))).toThrow(/2 to 50/);
-    expect(() => planScale(base({ count: MAX_SCALE_ORDERS + 1 }))).toThrow(/2 to 50/);
+    expect(() => planScale(base({ count: 1 }))).toThrow(/2 to 500/);
+    expect(() => planScale(base({ count: MAX_SCALE_ORDERS + 1 }))).toThrow(/2 to 500/);
     expect(() => planScale(base({ priceB: 2000 }))).toThrow(/same/);
     expect(() => planScale(base({ priceA: 0 }))).toThrow(/both prices/);
+  });
+});
+
+describe("planScale at 500 orders", () => {
+  it("plans 500 distinct rungs over a wide enough range", () => {
+    const plan = planScale(base({ count: 500, priceA: 1000, priceB: 2000, size: { usd: 100_000 } }));
+    expect(plan.orders).toHaveLength(500);
+    expect(new Set(plan.orders.map((o) => o.p)).size).toBe(500);
+    expect(plan.warnings).toEqual([]);
+  });
+
+  it("merges rungs that round onto the same tick in a narrow range", () => {
+    const plan = planScale(base({ count: 500, priceA: 1990, priceB: 2000, size: { usd: 100_000 } }));
+    expect(plan.orders.length).toBeLessThan(500);
+    expect(plan.warnings[0]).toMatch(/500 rungs round to \d+ prices and were merged/);
+  });
+
+  it("needs $10 per order", () => {
+    expect(() => planScale(base({ count: 500, priceA: 1000, priceB: 2000, size: { usd: 1000 } }))).toThrow(/500 orders need about \$5250/);
   });
 });
 

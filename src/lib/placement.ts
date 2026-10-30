@@ -14,6 +14,9 @@ export interface PlacementSummary {
   // Untriggered children (TP/SL) and waiting states.
   waiting: number;
   errors: string[];
+  // Orders never sent because an earlier batch of a split submit failed.
+  notSent: number;
+  notSentReason?: string;
 }
 
 type Status =
@@ -24,7 +27,7 @@ type Status =
   | "waitingForTrigger";
 
 export function summarizeStatuses(statuses: Status[]): PlacementSummary {
-  const s: PlacementSummary = { total: statuses.length, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [] };
+  const s: PlacementSummary = { total: statuses.length, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], notSent: 0 };
   let filledNotional = 0;
   for (const st of statuses) {
     if (typeof st === "string") s.waiting++;
@@ -48,17 +51,48 @@ function statusesOf(response: unknown): Status[] | null {
 // (the optional `builder` order field, { b, f }, that routes a fee to a third
 // party); orders.test.ts asserts no signed payload carries one.
 //
-// Sends every order in one signed batch. Never retried: a resend would be a
-// second set of orders. In a batch Hyperliquid accepts some orders and
-// rejects others; the SDK throws on any rejection, but the error carries the
-// full response, so each order's outcome is still reported.
+// Most orders one signed action may carry. Not in Hyperliquid's docs:
+// measured on mainnet and testnet (2026-10-29), 200 orders pass and 201 fail
+// with "Signed action over weight limit of 200".
+export const MAX_BATCH_ORDERS = 200;
+
+// Sends the orders as signed batches of at most MAX_BATCH_ORDERS, in order.
+// Never retried: a resend would be a second set of orders. In a batch
+// Hyperliquid accepts some orders and rejects others; the SDK throws on any
+// rejection, but the error carries the full response, so each order's outcome
+// is still reported. If the first batch fails outright (network, signing,
+// unknown wallet) nothing was placed and the error is thrown; if a later one
+// does, the orders already placed are reported and the rest counted as not sent.
 export async function submitOrders(client: ExchangeClient, orders: OrderSpec[], grouping: Grouping = "na") {
+  // TP/SL children only attach to a parent in the same action.
+  if (grouping !== "na" && orders.length > MAX_BATCH_ORDERS) {
+    throw new Error(`Grouped TP/SL orders must fit in one batch of at most ${MAX_BATCH_ORDERS}`);
+  }
+  if (orders.length <= MAX_BATCH_ORDERS) return summarizeStatuses(await submitBatch(client, orders, grouping));
+
+  const statuses: Status[] = [];
+  for (let i = 0; i < orders.length; i += MAX_BATCH_ORDERS) {
+    try {
+      statuses.push(...(await submitBatch(client, orders.slice(i, i + MAX_BATCH_ORDERS), grouping)));
+    } catch (err) {
+      if (i === 0) throw err;
+      const summary = summarizeStatuses(statuses);
+      summary.total = orders.length;
+      summary.notSent = orders.length - i;
+      summary.notSentReason = err instanceof Error ? err.message : String(err);
+      return summary;
+    }
+  }
+  return summarizeStatuses(statuses);
+}
+
+async function submitBatch(client: ExchangeClient, orders: OrderSpec[], grouping: Grouping): Promise<Status[]> {
   try {
     const res = await client.order({ orders, grouping });
-    return summarizeStatuses(res.response.data.statuses as Status[]);
+    return res.response.data.statuses as Status[];
   } catch (err) {
     const statuses = err instanceof ApiRequestError ? statusesOf(err.response) : null;
-    if (statuses) return summarizeStatuses(statuses);
+    if (statuses) return statuses;
     throw err;
   }
 }
@@ -96,6 +130,7 @@ export function describeCancels(s: CancelSummary): string {
 // For single orders, where a rejection should surface as an error.
 export function assertAccepted(s: PlacementSummary): PlacementSummary {
   if (s.errors.length) throw new Error([...new Set(s.errors)].join("; "));
+  if (s.notSent) throw new Error(`${s.notSent} not sent: ${s.notSentReason}`);
   return s;
 }
 
@@ -105,6 +140,7 @@ export function describeSummary(s: PlacementSummary): string {
   if (s.resting) parts.push(`${s.resting} resting`);
   if (s.waiting) parts.push(`${s.waiting} waiting`);
   if (s.errors.length) parts.push(`${s.errors.length} rejected: ${[...new Set(s.errors)].join("; ")}`);
+  if (s.notSent) parts.push(`${s.notSent} not sent: ${s.notSentReason}`);
   return parts.join(" · ") || "Submitted";
 }
 

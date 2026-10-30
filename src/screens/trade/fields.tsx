@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { cx } from "@/components/ui";
 import type { PanelState } from "@/lib/entry";
 import { fmtPrice } from "@/lib/format";
@@ -50,18 +51,37 @@ export function StopFields({ s, set, market, withLimit }: FieldProps & { withLim
   );
 }
 
+// The number is typed freely and applied on Enter or blur (clamped), so
+// entering "120" is not clamped digit by digit.
 function CountSlider({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Escape blurs too; the blur handler still sees the old draft, so it is told to skip.
+  const cancelled = useRef(false);
+  const commit = () => {
+    if (draft && !cancelled.current) onChange(Math.min(max, Math.max(min, Number(draft))));
+    cancelled.current = false;
+    setDraft(null);
+  };
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between text-[11px]">
         <span className="font-medium">{label}</span>
         <input
-          type="number"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Math.min(max, Math.max(min, Math.round(Number(e.target.value) || min))))}
-          className="w-12 bg-transparent text-right tabular-nums outline-none"
+          type="text"
+          inputMode="numeric"
+          value={draft ?? String(value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              cancelled.current = true;
+              e.currentTarget.blur();
+            }
+          }}
+          title={`${min} to ${max}`}
+          className="w-12 border-b border-dashed border-faint bg-transparent text-right tabular-nums outline-none hover:border-muted focus:border-accent"
           aria-label={label}
         />
       </div>

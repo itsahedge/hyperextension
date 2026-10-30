@@ -116,7 +116,8 @@ export function OrderPanel({
   const fields = { s, set, market, book: ctx.book };
   const tpslAllowed = isPerp && TPSL_TYPES.includes(s.type);
   const outcome = submit.data;
-  const outcomeTone = outcome?.kind === "orders" && outcome.summary.errors.length ? (outcome.summary.errors.length === outcome.summary.total ? "error" : "warn") : "success";
+  const failed = outcome?.kind === "orders" ? outcome.summary.errors.length + outcome.summary.notSent : 0;
+  const outcomeTone = outcome?.kind === "orders" && failed ? (failed === outcome.summary.total ? "error" : "warn") : "success";
 
   return (
     <Card>
