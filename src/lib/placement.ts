@@ -14,6 +14,9 @@ export interface PlacementSummary {
   // Untriggered children (TP/SL) and waiting states.
   waiting: number;
   errors: string[];
+  // Base size Hyperliquid canceled instead of filling: a market (IOC) order
+  // whose "filled" totalSz is below its size hit its slippage price limit.
+  canceledSize: number;
   // Orders never sent because an earlier batch of a split submit failed.
   notSent: number;
   notSentReason?: string;
@@ -26,19 +29,26 @@ type Status =
   | "waitingForFill"
   | "waitingForTrigger";
 
-export function summarizeStatuses(statuses: Status[]): PlacementSummary {
-  const s: PlacementSummary = { total: statuses.length, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], notSent: 0 };
+// `orders` (same order as `statuses`) lets a partial market fill be measured
+// against the size that was sent.
+export function summarizeStatuses(statuses: Status[], orders: OrderSpec[] = []): PlacementSummary {
+  const s: PlacementSummary = { total: statuses.length, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], canceledSize: 0, notSent: 0 };
   let filledNotional = 0;
-  for (const st of statuses) {
+  statuses.forEach((st, i) => {
     if (typeof st === "string") s.waiting++;
     else if ("resting" in st) s.resting++;
     else if ("filled" in st) {
       s.filled++;
-      s.filledSize += Number(st.filled.totalSz);
-      filledNotional += Number(st.filled.totalSz) * Number(st.filled.avgPx);
+      const filled = Number(st.filled.totalSz);
+      s.filledSize += filled;
+      filledNotional += filled * Number(st.filled.avgPx);
+      const sent = Number(orders[i]?.s ?? filled);
+      if (sent > filled) s.canceledSize += sent - filled;
     } else s.errors.push(st.error);
-  }
+  });
   s.filledAvgPx = s.filledSize > 0 ? filledNotional / s.filledSize : 0;
+  // Decimal sizes subtract with float noise (19577.32 - 18165.74).
+  s.canceledSize = Math.round(s.canceledSize * 1e8) / 1e8;
   return s;
 }
 
@@ -68,7 +78,7 @@ export async function submitOrders(client: ExchangeClient, orders: OrderSpec[], 
   if (grouping !== "na" && orders.length > MAX_BATCH_ORDERS) {
     throw new Error(`Grouped TP/SL orders must fit in one batch of at most ${MAX_BATCH_ORDERS}`);
   }
-  if (orders.length <= MAX_BATCH_ORDERS) return summarizeStatuses(await submitBatch(client, orders, grouping));
+  if (orders.length <= MAX_BATCH_ORDERS) return summarizeStatuses(await submitBatch(client, orders, grouping), orders);
 
   const statuses: Status[] = [];
   for (let i = 0; i < orders.length; i += MAX_BATCH_ORDERS) {
@@ -76,14 +86,14 @@ export async function submitOrders(client: ExchangeClient, orders: OrderSpec[], 
       statuses.push(...(await submitBatch(client, orders.slice(i, i + MAX_BATCH_ORDERS), grouping)));
     } catch (err) {
       if (i === 0) throw err;
-      const summary = summarizeStatuses(statuses);
+      const summary = summarizeStatuses(statuses, orders);
       summary.total = orders.length;
       summary.notSent = orders.length - i;
       summary.notSentReason = err instanceof Error ? err.message : String(err);
       return summary;
     }
   }
-  return summarizeStatuses(statuses);
+  return summarizeStatuses(statuses, orders);
 }
 
 async function submitBatch(client: ExchangeClient, orders: OrderSpec[], grouping: Grouping): Promise<Status[]> {
@@ -142,6 +152,9 @@ export function placementHeadline(s: PlacementSummary): { tone: "success" | "war
   const orders = (n: number) => (n === 1 ? "Order" : `${n} orders`);
   if (placed === 0) return { tone: "error", title: `${orders(s.total)} rejected`, placed: false };
   if (placed < s.total) return { tone: "warn", title: `${placed} of ${s.total} orders submitted`, placed: true };
+  if (s.canceledSize > 0) {
+    return { tone: "warn", title: s.total === 1 ? "Order partially filled" : `${s.total} orders submitted, some partially filled`, placed: true };
+  }
   return { tone: "success", title: `${orders(s.total)} submitted`, placed: true };
 }
 
@@ -157,6 +170,7 @@ export function describeSummary(s: PlacementSummary): string {
   if (s.filled) parts.push(`${s.filled} filled (${trim(s.filledSize)} @ ${trim(s.filledAvgPx)})`);
   if (s.resting) parts.push(`${s.resting} resting`);
   if (s.waiting) parts.push(`${s.waiting} waiting`);
+  if (s.canceledSize) parts.push(`${trim(s.canceledSize)} not filled, canceled at your price limit`);
   if (s.errors.length) parts.push(`${s.errors.length} rejected: ${[...new Set(s.errors)].join("; ")}`);
   if (s.notSent) parts.push(`${s.notSent} not sent: ${s.notSentReason}`);
   return parts.join(" · ") || "Submitted";
