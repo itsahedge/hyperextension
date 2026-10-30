@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Market } from "./markets";
 import {
   cancelTargets,
+  headerCancelLabel,
   historyStatus,
   coinsOf,
   filterByCoin,
@@ -175,5 +176,14 @@ describe("cancelOrders", () => {
 
   it("summarizes all-success", () => {
     expect(describeCancels(summarizeCancels(["success", "success"]))).toBe("2 of 2 canceled");
+  });
+});
+
+describe("headerCancelLabel", () => {
+  it("names the side and kind of a filtered bulk cancel", () => {
+    expect(headerCancelLabel(29, "buy", "all")).toBe("Cancel 29 buys");
+    expect(headerCancelLabel(5, "sell", "trigger")).toBe("Cancel 5 sell triggers");
+    expect(headerCancelLabel(12, "all", "limit")).toBe("Cancel 12 limits");
+    expect(headerCancelLabel(1, "buy", "limit")).toBe("Cancel 1 buy limit");
   });
 });
