@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillPrice, netClosedPnl } from "./fills";
+import { fillPrice, netClosedPnl, summarizeFills } from "./fills";
 
 // Live aggregated userFills for 0xEfd8…8808 and the values Hyperliquid's own
 // Trade History shows for them (Closed PNL, Price), 2026-10-29.
@@ -34,5 +34,29 @@ describe("fillPrice", () => {
     expect(fillPrice("123456.4")).toBe("123,456");
     expect(fillPrice("77853.24")).toBe("77,853");
     expect(fillPrice("0.000012345678")).toBe("0.000012346");
+  });
+});
+
+describe("summarizeFills", () => {
+  // Three lots of the 2026-10-30 KNTQ swarm (Hyperliquid Trade History values).
+  const lots = [
+    { sz: "415.14", px: "0.49203", closedPnl: "0.0", fee: "0.29059799", feeToken: "KNTQ" },
+    { sz: "355.60", px: "0.49203", closedPnl: "0.0", fee: "0.24891998", feeToken: "KNTQ" },
+    { sz: "554.51", px: "0.49124", closedPnl: "0.0", fee: "0.38815699", feeToken: "KNTQ" },
+  ];
+
+  it("sums size, fees and net PnL and size-weights the price", () => {
+    const s = summarizeFills(lots, "KNTQ");
+    expect(s.size).toBeCloseTo(1325.25, 8);
+    expect(s.avgPx).toBeCloseTo((415.14 * 0.49203 + 355.6 * 0.49203 + 554.51 * 0.49124) / 1325.25, 10);
+    expect(s.fee).toBeCloseTo(0.92767496, 8);
+    expect(s.feeToken).toBe("KNTQ");
+    // Each lot's fee valued at its price; Hyperliquid shows these rounded
+    // per row as -0.14, -0.12, -0.19.
+    expect(s.pnl).toBeCloseTo(-(0.29059799 * 0.49203 + 0.24891998 * 0.49203 + 0.38815699 * 0.49124), 10);
+  });
+
+  it("reports a mixed fee token as null", () => {
+    expect(summarizeFills([lots[0]!, { ...lots[1]!, feeToken: "USDC" }], "KNTQ").feeToken).toBeNull();
   });
 });

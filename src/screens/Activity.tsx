@@ -1,10 +1,12 @@
-import { Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
+import { Disclosure, DisclosureButton, DisclosurePanel, Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
 import type { UserNonFundingLedgerUpdatesResponse } from "@nktkas/hyperliquid/api/info";
-import type { ReactNode } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 import { Badge, Empty, Loading, Notice, errorMessage } from "@/components/ui";
 import { useFills, useFunding, useLedger, useMarketData } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
-import { fillPrice, netClosedPnl } from "@/lib/fills";
+import { fillPrice, netClosedPnl, summarizeFills } from "@/lib/fills";
+import type { Market } from "@/lib/markets";
+import { groupBySwarm, type SwarmItem } from "@/lib/swarm";
 import { fmtSignedUsd, fmtSize, fmtTime, fmtUsd, shortAddress, toneOf } from "@/lib/format";
 
 const LIMIT = 100;
@@ -68,41 +70,103 @@ function Row({ left, sub, right, rightSub }: { left: ReactNode; sub: ReactNode; 
   );
 }
 
+type Fill = NonNullable<ReturnType<typeof useFills>["data"]>[number];
+
+// Spot names are BASE/QUOTE; a perp's name is its base. Before market data
+// loads, a non-USDC fee token is the base (spot buys).
+function baseToken(f: Fill, market: Market | undefined): string {
+  return market ? market.name.split("/")[0]! : f.feeToken === "USDC" ? f.coin : f.feeToken;
+}
+
+const feeText = (fee: number | string, token: string | null, decimals = 8) =>
+  token === null ? "fees in several tokens" : `fee ${fmtSize(fee, token === "USDC" ? 2 : decimals)} ${token}`;
+
 function Fills() {
   const { config } = useUnlocked();
   const fills = useFills();
   const markets = useMarketData(config.network);
   // userFills returns newest first. PnL and price are shown as Hyperliquid's
-  // Trade History shows them (lib/fills).
+  // Trade History shows them (lib/fills). Lots of a swarm order collapse into
+  // one expandable row (lib/swarm cloids).
+  const items = useMemo(() => groupBySwarm(fills.data ?? [], (f) => f.cloid), [fills.data]);
+  if (fills.isPending) return <Loading />;
+  if (fills.isError) return <Notice tone="error">{errorMessage(fills.error)}</Notice>;
+  if (items.length === 0) return <Empty>No trades yet</Empty>;
+  const marketOf = (coin: string) => markets.data?.byCoin.get(coin);
+
   return (
-    <List
-      query={fills}
-      empty="No trades yet"
-      render={(f) => (
-        <Row
-          key={`${f.tid}-${f.oid}`}
-          left={
-            <>
-              <Badge tone={f.side === "B" ? "up" : "down"}>{f.dir}</Badge> {markets.data?.byCoin.get(f.coin)?.label ?? f.coin}
-            </>
-          }
-          sub={fmtTime(f.time)}
-          right={`${fmtSize(f.sz)} @ ${fillPrice(f.px)}`}
-          rightSub={(() => {
-            const market = markets.data?.byCoin.get(f.coin);
-            // Spot names are BASE/QUOTE; a perp's name is its base. Before market
-            // data loads, a non-USDC fee token is the base (spot buys).
-            const base = market ? market.name.split("/")[0]! : f.feeToken === "USDC" ? f.coin : f.feeToken;
-            const pnl = netClosedPnl(f, base);
-            return (
+    <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface px-3">
+      {items.slice(0, LIMIT).map((item) => {
+        if (item.kind === "swarm") return <SwarmFills key={item.id} swarm={item} market={marketOf(item.rows[0]!.coin)} />;
+        const f = item.row;
+        const market = marketOf(f.coin);
+        const pnl = netClosedPnl(f, baseToken(f, market));
+        return (
+          <Row
+            key={`${f.tid}-${f.oid}`}
+            left={
               <>
-                <span className={toneOf(pnl)}>{fmtSignedUsd(pnl)}</span> · fee {fmtSize(f.fee, f.feeToken === "USDC" ? 2 : 8)} {f.feeToken}
+                <Badge tone={f.side === "B" ? "up" : "down"}>{f.dir}</Badge> {market?.label ?? f.coin}
               </>
+            }
+            sub={fmtTime(f.time)}
+            right={`${fmtSize(f.sz)} @ ${fillPrice(f.px)}`}
+            rightSub={
+              <>
+                <span className={toneOf(pnl)}>{fmtSignedUsd(pnl)}</span> · {feeText(f.fee, f.feeToken)}
+              </>
+            }
+          />
+        );
+      })}
+    </ul>
+  );
+}
+
+function SwarmFills({ swarm, market }: { swarm: Extract<SwarmItem<Fill>, { kind: "swarm" }>; market: Market | undefined }) {
+  const first = swarm.rows[0]!;
+  const base = baseToken(first, market);
+  const total = summarizeFills(swarm.rows, base);
+  const filledLots = swarm.lots.length;
+  return (
+    <li>
+      <Disclosure>
+        <DisclosureButton className="group flex w-full items-center gap-2 py-2 text-left text-xs outline-none data-focus:outline-2 data-focus:outline-accent">
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate font-medium">
+              <Badge tone={first.side === "B" ? "up" : "down"}>{first.dir}</Badge> {market?.label ?? first.coin}{" "}
+              <span className="text-accent">Swarm</span>
+            </span>
+            <span className="truncate text-faint">
+              {fmtTime(first.time)} · {filledLots === swarm.lotCount ? `${filledLots} lots` : `${filledLots}/${swarm.lotCount} lots`}
+            </span>
+          </div>
+          <div className="ml-auto flex shrink-0 flex-col items-end whitespace-nowrap tabular-nums">
+            {`${fmtSize(total.size)} @ ${fillPrice(String(total.avgPx))}`}
+            <span className="text-faint">
+              <span className={toneOf(total.pnl)}>{fmtSignedUsd(total.pnl)}</span> · {feeText(total.fee, total.feeToken, 2)}
+            </span>
+          </div>
+          <svg aria-hidden viewBox="0 0 16 16" className="size-3.5 shrink-0 text-muted transition-transform duration-150 group-data-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.75">
+            <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </DisclosureButton>
+        <DisclosurePanel className="mb-2 grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 rounded-md bg-raised/50 px-2.5 py-1.5 text-[11px] tabular-nums whitespace-nowrap">
+          {swarm.lots.map((l) => {
+            const lot = summarizeFills(l.rows, base);
+            return (
+              <Fragment key={l.lot}>
+                <span className="text-muted">Lot {l.lot}</span>
+                <span className="text-right">
+                  {fmtSize(lot.size)} @ {fillPrice(String(lot.avgPx))}
+                </span>
+                <span className="text-right text-faint">{feeText(lot.fee, lot.feeToken)}</span>
+              </Fragment>
             );
-          })()}
-        />
-      )}
-    />
+          })}
+        </DisclosurePanel>
+      </Disclosure>
+    </li>
   );
 }
 
