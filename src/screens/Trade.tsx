@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Empty, Loading, Notice, Segmented, errorMessage } from "@/components/ui";
 import { useBook, useFavorites, useMarketData } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
-import { initialPanel, ORDER_TYPES, type PanelState } from "@/lib/entry";
+import { clearedInputs, initialPanel, ORDER_TYPES, type PanelState } from "@/lib/entry";
 import type { Market, MarketKind } from "@/lib/markets";
 import { ActiveTwaps } from "@/components/ActiveTwaps";
 import { OpenOrdersList } from "@/components/OpenOrdersList";
@@ -12,7 +12,6 @@ import { OrderPanel } from "./trade/OrderPanel";
 
 // Prices and sizes are per market; switching markets clears them but keeps
 // the order type and its settings.
-const PER_MARKET: (keyof PanelState)[] = ["size", "price", "trigger", "stopLimit", "scaleA", "scaleB", "tp", "sl"];
 
 export function Trade() {
   const { config } = useUnlocked();
@@ -46,8 +45,7 @@ export function Trade() {
 
   const resetForMarket = (m: Market) => {
     setPanel((p) => {
-      const next = { ...p };
-      for (const k of PER_MARKET) (next as Record<string, unknown>)[k] = initialPanel[k];
+      const next = { ...p, ...clearedInputs() };
       // Perp-only types fall back to a plain limit on spot.
       if (m.kind !== "perp" && ORDER_TYPES.find((t) => t.id === p.type)?.perpOnly) next.type = "limit";
       if (m.kind !== "perp") Object.assign(next, { reduce: false, tpsl: false });

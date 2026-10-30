@@ -56,6 +56,11 @@ export interface PanelState {
   sl: string;
 }
 
+// The amounts and prices typed for one order; cleared after a submit that
+// placed something and when the market changes. Side, type, counts, skews and
+// toggles are settings and stay.
+export const ORDER_INPUTS = ["size", "price", "trigger", "stopLimit", "scaleA", "scaleB", "tp", "sl"] as const satisfies (keyof PanelState)[];
+
 export const initialPanel: PanelState = {
   side: "buy",
   type: "limit",
@@ -261,4 +266,8 @@ export function maxSizes(s: PanelState, ctx: EntryContext, bal: Balances): { buy
   }
   const px = referencePrice(s, ctx);
   return { buy: px > 0 ? (bal.spotQuote ?? 0) / px : 0, sell: bal.spotBase ?? 0 };
+}
+
+export function clearedInputs(): Partial<PanelState> {
+  return Object.fromEntries(ORDER_INPUTS.map((k) => [k, initialPanel[k]]));
 }

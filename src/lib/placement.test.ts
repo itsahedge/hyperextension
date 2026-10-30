@@ -2,7 +2,7 @@ import { ExchangeClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { OrderSpec } from "./orders";
-import { describeSummary, MAX_BATCH_ORDERS, submitOrders } from "./placement";
+import { describeSummary, MAX_BATCH_ORDERS, placementHeadline, submitOrders, type PlacementSummary } from "./placement";
 
 type Action = { type: string; orders: OrderSpec[] };
 
@@ -76,5 +76,22 @@ describe("submitOrders batching", () => {
     const { client: c, batches } = client(resting);
     await expect(submitOrders(c, ladder(MAX_BATCH_ORDERS + 1), "normalTpsl")).rejects.toThrow(/at most 200/);
     expect(batches).toHaveLength(0);
+  });
+});
+
+describe("placementHeadline", () => {
+  const summary = (over: Partial<PlacementSummary>): PlacementSummary => ({ total: 1, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], notSent: 0, ...over });
+
+  it("says plainly that the orders went in", () => {
+    expect(placementHeadline(summary({ total: 100, resting: 100 }))).toEqual({ tone: "success", title: "100 orders submitted", placed: true });
+    expect(placementHeadline(summary({ total: 1, filled: 1 }))).toEqual({ tone: "success", title: "Order submitted", placed: true });
+    expect(placementHeadline(summary({ total: 3, resting: 1, waiting: 2 }))).toEqual({ tone: "success", title: "3 orders submitted", placed: true });
+  });
+
+  it("flags partial and total failures", () => {
+    expect(placementHeadline(summary({ total: 100, resting: 40, errors: Array(60).fill("Insufficient margin") }))).toEqual({ tone: "warn", title: "40 of 100 orders submitted", placed: true });
+    expect(placementHeadline(summary({ total: 450, resting: 200, notSent: 250 }))).toEqual({ tone: "warn", title: "200 of 450 orders submitted", placed: true });
+    expect(placementHeadline(summary({ total: 1, errors: ["Post only order would have immediately matched"] }))).toEqual({ tone: "error", title: "Order rejected", placed: false });
+    expect(placementHeadline(summary({ total: 5, errors: Array(5).fill("x") }))).toEqual({ tone: "error", title: "5 orders rejected", placed: false });
   });
 });
