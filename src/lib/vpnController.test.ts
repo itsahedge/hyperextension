@@ -177,6 +177,38 @@ describe("VpnController", () => {
     expect(h.connects()).toBe(1);
   });
 
+  it("reconnects on unlock only when the VPN is meant to be on", async () => {
+    const off = harness(healthy);
+    expect((await off.vpn.autoConnect(CONF)).connected).toBe(false);
+    expect(off.connects()).toBe(0);
+
+    const on = harness(healthy, { settings: { enabled: true, location: ZURICH } });
+    const state = await on.vpn.autoConnect(CONF);
+    expect(state).toMatchObject({ enabled: true, connected: true, location: ZURICH });
+    expect(on.sent[0]).toMatchObject({ type: "up", server: { host: ZURICH.host } });
+    // Already connected: nothing more is sent.
+    await on.vpn.autoConnect(CONF);
+    expect(on.sent.filter((m) => m.type === "up")).toHaveLength(1);
+  });
+
+  it("shares one connect between a manual and an automatic attempt", async () => {
+    let releaseUp!: () => void;
+    const upGate = new Promise<void>((r) => (releaseUp = r));
+    const h = harness(async (m) => {
+      if (m.type === "up") await upGate;
+      return healthy(m);
+    }, { settings: { enabled: true } });
+    const manual = h.vpn.up(CONF);
+    await tick();
+    expect((await h.vpn.state()).connecting).toBe(true);
+    const auto = h.vpn.autoConnect(CONF);
+    releaseUp();
+    const [a, b] = await Promise.all([manual, auto]);
+    expect(a.connected && b.connected).toBe(true);
+    expect(h.sent.filter((m) => m.type === "up")).toHaveLength(1);
+    expect((await h.vpn.state()).connecting).toBe(false);
+  });
+
   it("lists servers without leaving the helper running", async () => {
     const h = harness((m) => (m.type === "servers" ? { servers: [ZURICH] } : {}));
     expect(await h.vpn.servers()).toEqual([ZURICH]);

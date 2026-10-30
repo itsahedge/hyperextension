@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import type { VpnLocation, VpnMessage, VpnReply, VpnState } from "@/lib/vpn";
 
 async function send<T>(message: VpnMessage): Promise<T> {
@@ -18,8 +19,27 @@ async function send<T>(message: VpnMessage): Promise<T> {
   return reply.value;
 }
 
+// Polls faster while the VPN should be on but is not up yet (reconnect after
+// unlock), so the popup notices the tunnel within seconds.
 export function useVpnState() {
-  return useQuery({ queryKey: ["vpn"], queryFn: () => send<VpnState>({ vpn: "state" }), refetchInterval: 15_000 });
+  return useQuery({
+    queryKey: ["vpn"],
+    queryFn: () => send<VpnState>({ vpn: "state" }),
+    refetchInterval: (q) => (q.state.data?.enabled && !q.state.data.connected ? 2_000 : 15_000),
+  });
+}
+
+// Requests made while the tunnel was down failed at the proxy; refetch them
+// once it comes up.
+export function useRefetchWhenVpnConnects(connected: boolean | undefined) {
+  const queryClient = useQueryClient();
+  const was = useRef(connected);
+  useEffect(() => {
+    if (connected && was.current === false) {
+      void queryClient.invalidateQueries({ predicate: (q) => !["vpn", "vpnServers"].includes(String(q.queryKey[0])) });
+    }
+    was.current = connected;
+  }, [connected, queryClient]);
 }
 
 export function useVpnServers(enabled: boolean) {

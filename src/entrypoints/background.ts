@@ -1,5 +1,5 @@
 import { AUTO_LOCK_ALARM, AUTO_LOCK_CHECK_MINUTES, checkAutoLock, onScreenLocked } from "@/lib/autolock";
-import { vpnItem } from "@/lib/storage";
+import { unlockedItem, vpnItem, type UnlockedSession } from "@/lib/storage";
 import { routedHosts, VPN_HOST, type VpnMessage, type VpnReply } from "@/lib/vpn";
 import { VpnController } from "@/lib/vpnController";
 
@@ -35,7 +35,20 @@ export default defineBackground(() => {
     save: (settings) => vpnItem.setValue(settings),
     hosts: routedHosts(browser.runtime.getManifest().host_permissions ?? []),
   });
-  void vpn.init().catch((err) => console.error("VPN init failed", err));
+  // The .conf lives in the vault, so the tunnel can only come back once it is
+  // unlocked: on unlock, and on a worker restart while already unlocked.
+  const reconnect = (session: UnlockedSession | null) => {
+    const conf = session?.secrets.vpnConf;
+    if (conf) void vpn.autoConnect(conf).catch((err) => console.error("VPN reconnect failed", err));
+  };
+  void vpn
+    .init()
+    .then(() => unlockedItem.getValue())
+    .then(reconnect)
+    .catch((err) => console.error("VPN init failed", err));
+  unlockedItem.watch((next, prev) => {
+    if (next && !prev) reconnect(next);
+  });
 
   browser.proxy.onProxyError.addListener((details) => console.warn("proxy error", details.error, details.details));
 

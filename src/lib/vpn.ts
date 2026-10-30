@@ -47,6 +47,7 @@ export interface VpnSettings {
 export interface VpnState {
   enabled: boolean;
   connected: boolean;
+  connecting: boolean;
   location?: VpnLocation;
   endpoint?: string;
   exit?: VpnExit;
