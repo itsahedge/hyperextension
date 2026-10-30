@@ -6,7 +6,7 @@ export function SpotBalancesCard({
   balances,
   markets,
 }: {
-  balances: { coin: string; total: string }[];
+  balances: { coin: string; total: string; hold: string }[];
   // Undefined while market data loads; amounts still render, values show "…".
   markets: Market[] | undefined;
 }) {
@@ -17,17 +17,26 @@ export function SpotBalancesCard({
       {holdings.length === 0 ? (
         <Empty>No spot balances</Empty>
       ) : (
-        <ul className="flex flex-col divide-y divide-line text-xs">
-          {holdings.map((h) => (
-            <li key={h.coin} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
-              <span className="font-medium">{h.coin}</span>
-              <span className="ml-auto tabular-nums">{fmtSize(h.total)}</span>
-              <span className="min-w-20 text-right text-muted tabular-nums">
-                {!markets ? "…" : h.usd === null ? "-" : fmtUsd(h.usd)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <table className="w-full text-xs tabular-nums">
+          <thead className="text-[11px] text-faint">
+            <tr>
+              <th className="pb-1 text-left font-normal">Asset</th>
+              <th className="pb-1 text-right font-normal">Total</th>
+              <th className="pb-1 text-right font-normal">Available</th>
+              <th className="pb-1 text-right font-normal">Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {holdings.map((h) => (
+              <tr key={h.coin}>
+                <td className="py-1.5 font-medium">{h.coin}</td>
+                <td className="py-1.5 text-right">{fmtSize(h.total)}</td>
+                <td className="py-1.5 text-right">{fmtSize(h.available)}</td>
+                <td className="py-1.5 pl-2 text-right text-muted">{!markets ? "…" : h.usd === null ? "-" : fmtUsd(h.usd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </Card>
   );

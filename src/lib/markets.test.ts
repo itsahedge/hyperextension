@@ -125,24 +125,31 @@ describe("spotHoldings", () => {
     expect(
       spotHoldings(
         [
-          { coin: "NOPE", total: "1000" },
-          { coin: "USDC", total: "50" },
-          { coin: "PURR", total: "0.0" },
-          { coin: "HYPE", total: "2.5" },
-          { coin: "ABC", total: "3" },
+          { coin: "NOPE", total: "1000", hold: "0.0" },
+          { coin: "USDC", total: "50", hold: "0.0" },
+          { coin: "PURR", total: "0.0", hold: "0.0" },
+          { coin: "HYPE", total: "2.5", hold: "0.0" },
+          { coin: "ABC", total: "3", hold: "0.0" },
         ],
         markets,
       ),
     ).toEqual([
-      { coin: "HYPE", total: "2.5", usd: 100 },
-      { coin: "USDC", total: "50", usd: 50 },
-      { coin: "ABC", total: "3", usd: null },
-      { coin: "NOPE", total: "1000", usd: null },
+      { coin: "HYPE", total: "2.5", available: 2.5, usd: 100 },
+      { coin: "USDC", total: "50", available: 50, usd: 50 },
+      { coin: "ABC", total: "3", available: 3, usd: null },
+      { coin: "NOPE", total: "1000", available: 1000, usd: null },
     ]);
   });
 
+  it("reports the balance not reserved by open orders as available", () => {
+    // Live account with 20 resting spot buys: Hyperliquid's UI shows 20,362.68903122 available.
+    const [usdc] = spotHoldings([{ coin: "USDC", total: "28607.85672852", hold: "8245.1676973" }], markets);
+    expect(usdc?.available).toBeCloseTo(20362.68903122, 6);
+    expect(usdc?.total).toBe("28607.85672852");
+  });
+
   it("returns an empty list when everything is zero", () => {
-    expect(spotHoldings([{ coin: "USDC", total: "0.0" }], markets)).toEqual([]);
+    expect(spotHoldings([{ coin: "USDC", total: "0.0", hold: "0.0" }], markets)).toEqual([]);
   });
 });
 

@@ -106,16 +106,18 @@ export interface SpotHolding {
   coin: string;
   // API decimal string, kept as-is for display precision.
   total: string;
+  // Not reserved by open orders (total - hold), as Hyperliquid's "Available Balance".
+  available: number;
   usd: number | null;
 }
 
 // Non-zero spot balances, largest USD value first; unpriced tokens last.
-export function spotHoldings(balances: { coin: string; total: string }[], markets: Market[]): SpotHolding[] {
+export function spotHoldings(balances: { coin: string; total: string; hold: string }[], markets: Market[]): SpotHolding[] {
   return balances
     .filter((b) => Number(b.total) !== 0)
     .map((b) => {
       const price = spotTokenPrice(b.coin, markets);
-      return { coin: b.coin, total: b.total, usd: price === null ? null : Number(b.total) * price };
+      return { coin: b.coin, total: b.total, available: freeBalance(b), usd: price === null ? null : Number(b.total) * price };
     })
     .sort((a, b) => (b.usd ?? -Infinity) - (a.usd ?? -Infinity) || a.coin.localeCompare(b.coin));
 }
