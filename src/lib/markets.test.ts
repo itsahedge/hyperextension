@@ -2,6 +2,7 @@ import type { AllPerpMetasResponse, MetaAndAssetCtxsResponse, SpotMetaAndAssetCt
 import { describe, expect, it } from "vitest";
 import {
   buildMarkets,
+  dexOfCoin,
   freeBalance,
   marketByCoin,
   marketData,
@@ -287,5 +288,14 @@ describe("withLiveCtx", () => {
 
   it("ignores coins it does not know", () => {
     expect(withLiveCtx(data, "NOPE", perpCtx("1", "1"))).toBe(data);
+  });
+});
+
+describe("dexOfCoin", () => {
+  it("reads the perp dex from an API coin", () => {
+    expect(dexOfCoin("xyz:TSLA")).toBe("xyz");
+    expect(dexOfCoin("BTC")).toBe("");
+    expect(dexOfCoin("@107")).toBe("");
+    expect(dexOfCoin("PURR/USDC")).toBe("");
   });
 });

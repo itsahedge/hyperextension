@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Empty, Loading, Notice, Segmented, errorMessage } from "@/components/ui";
-import { useBook, useFavorites, useLiveMarketCtx, useMarketData } from "@/hooks/queries";
+import { isUnified, useAbstraction, useBook, useFavorites, useLiveMarketCtx, useMarketData } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { clearedInputs, initialPanel, ORDER_TYPES, type PanelState } from "@/lib/entry";
 import type { Market, MarketKind } from "@/lib/markets";
 import { ActiveTwaps } from "@/components/ActiveTwaps";
 import { OpenOrdersList } from "@/components/OpenOrdersList";
 import { withFavoritesFirst } from "@/lib/favorites";
-import { FavoriteChips, MarketHeader, MarketPicker } from "./trade/MarketPicker";
+import { FavoriteChips, Hip3Details, MarketHeader, MarketPicker } from "./trade/MarketPicker";
 import { OrderPanel } from "./trade/OrderPanel";
 
 // Prices and sizes are per market; switching markets clears them but keeps
@@ -74,6 +74,8 @@ export function Trade() {
           <MarketPicker markets={list} value={selected} onChange={pick} favorites={favorites.list} onToggleFavorite={favorites.toggle} />
           <FavoriteChips markets={favMarkets} value={selected} onChange={pick} />
           <MarketHeader market={selected} />
+          <Hip3Details market={selected} />
+          {selected.dex && <StandardModeNotice />}
           <PanelWithBook market={selected} panel={panel} setPanel={setPanel} />
         </>
       ) : list.length > 0 ? (
@@ -92,4 +94,17 @@ function PanelWithBook({ market, panel, setPanel }: { market: Market; panel: Pan
   const book = useBook(config.network, market.coin);
   useLiveMarketCtx(config.network, market);
   return <OrderPanel market={market} book={book.data} s={panel} set={(patch) => setPanel((p) => ({ ...p, ...patch }))} />;
+}
+
+// HIP-3 is supported for unified accounts only. Standard accounts keep a
+// separate balance per perp dex (Hyperliquid "Account abstraction modes"
+// docs), and this extension has no per-dex collateral transfer.
+function StandardModeNotice() {
+  const mode = useAbstraction();
+  if (mode.data === undefined || isUnified(mode.data)) return null;
+  return (
+    <Notice tone="info">
+      Standard account: this dex has its own balance, separate from your main perp balance. Switch to a unified account on Hyperliquid to trade it with your USDC.
+    </Notice>
+  );
 }

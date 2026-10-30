@@ -157,3 +157,19 @@ export function MarketHeader({ market: m }: { market: Market }) {
     </div>
   );
 }
+
+const MARGIN_MODE: Record<string, string> = { noCross: "Isolated only", strictIsolated: "Strict isolated (margin can't be removed)" };
+
+// HIP-3 markets: who deployed them and how they differ from main perps.
+// Fees per the trade[XYZ] fee docs: 2x the validator-operated perp rates,
+// cut by at least 90% under growth mode.
+export function Hip3Details({ market: m }: { market: Market }) {
+  if (!m.dex) return null;
+  const parts = [
+    `HIP-3 · ${m.dex} dex`,
+    `${m.collateral} collateral`,
+    MARGIN_MODE[m.marginMode ?? ""],
+    m.growthMode ? "Growth mode: fees at least 90% lower" : "Fees 2x standard perps",
+  ].filter(Boolean);
+  return <p className="-mt-1 px-1 text-[11px] text-faint">{parts.join(" · ")}</p>;
+}

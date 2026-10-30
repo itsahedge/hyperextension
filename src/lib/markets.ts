@@ -201,6 +201,18 @@ export function withDexCtxs(data: MarketData, entries: [string, PerpCtx[]][]): M
   return marketData({ ...data.raw, perp }, hip3Ctxs);
 }
 
+// The perp dex an API coin belongs to: HIP-3 coins are "{dex}:{coin}"; main
+// perps and spot (and the main dex's open orders) use "".
+export function dexOfCoin(coin: string): string {
+  const i = coin.indexOf(":");
+  return i < 0 ? "" : coin.slice(0, i);
+}
+
+// Every perp dex name in allPerpMetas order, "" first.
+export function perpDexNames(metas: AllPerpMetasResponse): string[] {
+  return metas.map((m, i) => (i === 0 ? "" : dexOfCoin(m.universe[0]?.name ?? ""))).filter((d, i) => i === 0 || d !== "");
+}
+
 // Token identifier for sendAsset-style actions: "NAME:0x<tokenId>".
 export function usdcTokenId(spotMeta: SpotMetaAndAssetCtxsResponse[0]): string {
   const usdc = spotMeta.tokens.find((t) => t.name === "USDC");
