@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { Badge, Empty, Loading, Notice, errorMessage } from "@/components/ui";
 import { useFills, useFunding, useLedger, useMarketData } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
-import { fmtPrice, fmtSignedUsd, fmtSize, fmtTime, fmtUsd, shortAddress, toneOf } from "@/lib/format";
+import { fillPrice, netClosedPnl } from "@/lib/fills";
+import { fmtSignedUsd, fmtSize, fmtTime, fmtUsd, shortAddress, toneOf } from "@/lib/format";
 
 const LIMIT = 100;
 
@@ -71,7 +72,8 @@ function Fills() {
   const { config } = useUnlocked();
   const fills = useFills();
   const markets = useMarketData(config.network);
-  // userFills returns newest first.
+  // userFills returns newest first. PnL and price are shown as Hyperliquid's
+  // Trade History shows them (lib/fills).
   return (
     <List
       query={fills}
@@ -85,14 +87,19 @@ function Fills() {
             </>
           }
           sub={fmtTime(f.time)}
-          right={`${fmtSize(f.sz)} @ ${fmtPrice(f.px)}`}
-          rightSub={
-            Number(f.closedPnl) !== 0 ? (
-              <span className={toneOf(f.closedPnl)}>{fmtSignedUsd(f.closedPnl)}</span>
-            ) : (
-              `fee ${fmtSize(f.fee, 4)} ${f.feeToken}`
-            )
-          }
+          right={`${fmtSize(f.sz)} @ ${fillPrice(f.px)}`}
+          rightSub={(() => {
+            const market = markets.data?.byCoin.get(f.coin);
+            // Spot names are BASE/QUOTE; a perp's name is its base. Before market
+            // data loads, a non-USDC fee token is the base (spot buys).
+            const base = market ? market.name.split("/")[0]! : f.feeToken === "USDC" ? f.coin : f.feeToken;
+            const pnl = netClosedPnl(f, base);
+            return (
+              <>
+                <span className={toneOf(pnl)}>{fmtSignedUsd(pnl)}</span> · fee {fmtSize(f.fee, f.feeToken === "USDC" ? 2 : 8)} {f.feeToken}
+              </>
+            );
+          })()}
         />
       )}
     />
