@@ -3,11 +3,10 @@ import { AuthorizeDialog } from "@/components/AuthorizeDialog";
 import { CopyAddress } from "@/components/CopyAddress";
 import { SpotBalancesCard } from "@/components/SpotBalances";
 import { Button, Card, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
-import { useExchange, useMarketData, usePerpState, useSpotState } from "@/hooks/queries";
+import { useExchange, useMarketData, useMasterAction, usePerpState, useSpotState } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { fmtUsd } from "@/lib/format";
 import { freeBalance } from "@/lib/markets";
-import { verify } from "@/lib/session";
 import { DepositCard } from "./wallet/DepositCard";
 import { UnitDepositCard } from "./wallet/UnitDepositCard";
 import { assertWithdrawDestination, withdrawDestinations } from "@/lib/withdraw";
@@ -129,10 +128,7 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
   const [amount, setAmount] = useState("");
   const [destination, setDestination] = useState<string>(config.address);
   const [confirming, setConfirming] = useState(false);
-  const withdraw = useExchange(
-    (client, a: { amount: string; destination: `0x${string}` }) => client.withdraw3(a),
-    { userSigned: true },
-  );
+  const withdraw = useMasterAction((client, a: { amount: string; destination: `0x${string}` }) => client.withdraw3(a));
 
   const amountError = validAmount(amount, withdrawable);
   // The selected entry can disappear if it is removed from the allowlist.
@@ -192,8 +188,7 @@ function WithdrawCard({ withdrawable }: { withdrawable: number }) {
         confirmLabel="Withdraw"
         onAuthorized={async (auth) => {
           const to = assertWithdrawDestination(selected.address, config.address, allowlist);
-          await verify(auth);
-          await withdraw.mutateAsync({ amount: amount.trim(), destination: to });
+          await withdraw.mutateAsync({ auth, args: { amount: amount.trim(), destination: to } });
           setAmount("");
         }}
         description={<WithdrawSummary amount={amount} destination={`${selected.label} (${selected.address})`} external={external} />}

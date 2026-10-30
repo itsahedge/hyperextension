@@ -3,14 +3,15 @@ import { useState } from "react";
 import { generatePrivateKey } from "viem/accounts";
 import { AuthorizeDialog } from "@/components/AuthorizeDialog";
 import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
-import { useAgents, useExchange, usePrefs } from "@/hooks/queries";
+import { useAgents, usePrefs } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { addressOf, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
 import { AUTO_LOCK_CHOICES } from "@/lib/autolock";
 import { fmtTime, shortAddress } from "@/lib/format";
 import { updatePrefs } from "@/lib/prefs";
 import { addAllowed, MAX_LABEL, removeAllowed, type AllowedAddress } from "@/lib/withdraw";
-import { enrollPasskey, lock, removePasskey, updateConfig, updateVault, wipe, type Auth } from "@/lib/session";
+import { exchangeClient } from "@/lib/hyperliquid";
+import { enrollPasskey, lock, removePasskey, setSigningMode, updateConfig, updateVault, wipe, type Auth } from "@/lib/session";
 import { VpnCard } from "./settings/VpnCard";
 
 // Hyperliquid caps API wallet expiry at 180 days and names at 16 characters.
@@ -32,10 +33,17 @@ export function Settings() {
 }
 
 function AccountCard() {
-  const { config, secrets } = useUnlocked();
+  const { config, secrets, canUserSign } = useUnlocked();
   const [error, setError] = useState<string | null>(null);
+  const [toMaster, setToMaster] = useState(false);
   const apply = (patch: { network?: Network; mode?: SignerMode }) => {
     setError(null);
+    // In API-wallet mode the master key is not in the session; master mode
+    // loads it there as the signer, so that switch re-authorizes.
+    if (patch.mode === "master" && !secrets.masterKey) {
+      setToMaster(true);
+      return;
+    }
     updateConfig(patch).catch((err) => setError(errorMessage(err)));
   };
 
@@ -65,13 +73,21 @@ function AccountCard() {
             value={config.mode}
             onChange={(mode) => apply({ mode })}
             options={[
-              { value: "master", label: "Master key", disabled: !secrets.masterKey },
+              { value: "master", label: "Master key", disabled: !canUserSign },
               { value: "agent", label: "API wallet", disabled: !secrets.agentKey },
             ]}
           />
         </div>
         {error && <Notice tone="error">{error}</Notice>}
       </div>
+      <AuthorizeDialog
+        open={toMaster}
+        onClose={() => setToMaster(false)}
+        title="Sign trades with the master key"
+        description="Trades will be signed with the master key, which stays unlocked in this browser session until you lock."
+        confirmLabel="Switch"
+        onAuthorized={(auth) => setSigningMode(auth, "master")}
+      />
     </Card>
   );
 }
@@ -127,7 +143,7 @@ function AgentCard() {
 
         {canUserSign ? <CreateAgent /> : <Notice tone="info">Creating an API wallet needs the master key.</Notice>}
         <ImportAgent />
-        {secrets.masterKey && secrets.agentKey && <ForgetMaster />}
+        {canUserSign && secrets.agentKey && <ForgetMaster />}
       </div>
     </Card>
   );
@@ -138,10 +154,7 @@ function CreateAgent() {
   const [days, setDays] = useState(String(MAX_AGENT_DAYS));
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState<string | null>(null);
-  const approve = useExchange(
-    (client, a: { agentAddress: `0x${string}`; agentName: string }) => client.approveAgent(a),
-    { userSigned: true },
-  );
+  const queryClient = useQueryClient();
 
   const daysNum = Number(days);
   const nameError =
@@ -151,15 +164,18 @@ function CreateAgent() {
 
   // updateVault authorizes first, then runs the on-chain approval, then saves:
   // a failed auth never approves, and a failed approval never stores the key.
+  // The master key comes from the vault it just opened, not from the session.
   const create = async (auth: Auth) => {
     const agentKey = generatePrivateKey();
     const agentAddress = addressOf(agentKey);
     const validUntil = Date.now() + daysNum * DAY_MS;
     await updateVault(auth, async (secrets, config) => {
-      await approve.mutateAsync({ agentAddress, agentName: `${name.trim()} valid_until ${validUntil}` });
+      if (!secrets.masterKey) throw new Error("Approving an API wallet needs the master key");
+      await exchangeClient(config.network, secrets.masterKey).approveAgent({ agentAddress, agentName: `${name.trim()} valid_until ${validUntil}` });
       return { secrets: { ...secrets, agentKey }, config: { ...config, mode: "agent" } };
     });
     setDone(agentAddress);
+    await queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "markets" });
   };
 
   return (

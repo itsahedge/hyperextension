@@ -7,13 +7,13 @@ import { useArbitrumBalances, useCctpFee } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { CCTP_CONFIG, fetchFeeQuote, parseUsdc, planDeposit, USDC_DECIMALS, type DepositDex } from "@/lib/cctp";
 import { submitDeposit } from "@/lib/cctpClient";
-import { verify } from "@/lib/session";
+import { withMasterKey, type Auth } from "@/lib/session";
 
 const usdc = (units: bigint) => formatUnits(units, USDC_DECIMALS);
 
 // USDC on Arbitrum -> this account on Hyperliquid, via Circle CCTP.
 export function DepositCard() {
-  const { config, secrets, canUserSign } = useUnlocked();
+  const { config, canUserSign } = useUnlocked();
   const cfg = CCTP_CONFIG[config.network];
   const balances = useArbitrumBalances();
   const fee = useCctpFee(config.network);
@@ -35,13 +35,11 @@ export function DepositCard() {
   const noGas = balances.data !== undefined && balances.data.eth === 0n;
   const chainName = config.network === "testnet" ? "Arbitrum Sepolia" : "Arbitrum";
 
-  const deposit = async (auth: Parameters<typeof verify>[0]) => {
-    if (!secrets.masterKey) throw new Error("Depositing needs the master key");
-    await verify(auth);
+  const deposit = async (auth: Auth) => {
     // Re-quote and re-plan at send time so the fee and balance are current.
     const quote = await fetchFeeQuote(cfg);
     const fresh = planDeposit(cfg, { amount: parseUsdc(amount), recipient: config.address, dex, quote, balance: balances.data?.usdc });
-    const { hash, status } = await submitDeposit(config.network, secrets.masterKey, fresh);
+    const { hash, status } = await withMasterKey(auth, (key) => submitDeposit(config.network, key, fresh));
     if (status !== "success") throw new Error(`Arbitrum transaction reverted (${hash})`);
     setResult({ hash });
     setAmount("");

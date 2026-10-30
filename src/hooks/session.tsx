@@ -29,6 +29,7 @@ export function useSession(): SessionState {
 
 export interface Unlocked {
   config: AccountConfig;
+  // Session secrets: in API-wallet mode they exclude the master key.
   secrets: Secrets;
   signer: ReturnType<typeof signerKey>;
   canUserSign: boolean;
@@ -44,8 +45,9 @@ export function useUnlocked(): Unlocked {
     secrets: state.secrets,
     signer: signerKey(state.config, state.secrets),
     // User-signed EIP-712 actions (withdraw, usdClassTransfer, approveAgent)
-    // need the master key regardless of the active signing mode.
-    canUserSign: Boolean(state.secrets.masterKey),
+    // need the master key regardless of the active signing mode; in API-wallet
+    // mode it is opened from the vault per action (withMasterKey).
+    canUserSign: state.hasMasterKey,
     passkeys: state.passkeys,
   };
 }
