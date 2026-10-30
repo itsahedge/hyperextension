@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Button, cx } from "@/components/ui";
 import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
@@ -28,6 +28,36 @@ type TabId = (typeof TABS)[number]["id"];
 
 // Data also polls on its own (account every 5s, markets every 10s, history
 // every 30s); this forces the current screen's queries to refetch now.
+// Opens the app in the browser's side panel for this window (full window
+// height; the popup is capped at 600px). sidePanel.open must run inside the
+// click's user gesture, so the window ID is looked up beforehand.
+function SidePanelButton() {
+  const [windowId, setWindowId] = useState<number | null>(null);
+  useEffect(() => {
+    void browser.windows.getCurrent().then((w) => setWindowId(w.id ?? null));
+  }, []);
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="w-7 px-0"
+      aria-label="Open in side panel"
+      title="Open in side panel"
+      disabled={windowId === null}
+      onClick={() => {
+        if (windowId === null) return;
+        void browser.sidePanel.open({ windowId }).then(() => window.close());
+      }}
+    >
+      <svg aria-hidden viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" className="size-3.5">
+        <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+        <path d="M10 2.5v11" />
+      </svg>
+    </Button>
+  );
+}
+
 function RefreshButton() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -91,6 +121,7 @@ function Shell() {
         {config.network === "testnet" && <Badge tone="warn">Testnet</Badge>}
         <VpnBadge />
         <RefreshButton />
+        {document.documentElement.dataset.surface === "popup" && <SidePanelButton />}
         <Button variant="ghost" size="sm" onClick={() => void lock()}>
           Lock
         </Button>
