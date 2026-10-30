@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@/assets/main.css";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ToastProvider } from "@/components/Toaster";
 import { SessionProvider } from "@/hooks/session";
 import { App } from "@/entrypoints/popup/App";
 
@@ -22,7 +23,9 @@ export function mountApp() {
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
           <SessionProvider>
-            <App />
+            <ToastProvider>
+              <App />
+            </ToastProvider>
           </SessionProvider>
         </ErrorBoundary>
       </QueryClientProvider>

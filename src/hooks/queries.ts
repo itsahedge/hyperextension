@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
+import type { BookLevel } from "@/lib/liquidity";
 import { buildMarkets, marketByCoin, usdcTokenId, withLiveCtx, type Market } from "@/lib/markets";
 import { CCTP_CONFIG, fetchFeeQuote } from "@/lib/cctp";
 import { arbitrumBalances } from "@/lib/cctpClient";
@@ -141,16 +142,28 @@ export function useActiveAsset(coin: string | null) {
   });
 }
 
-function bookTop(book: { levels: [{ px: string }[], { px: string }[]] } | null) {
-  return { bid: Number(book?.levels[0][0]?.px ?? 0), ask: Number(book?.levels[1][0]?.px ?? 0) };
+// Best bid/ask plus the visible levels (20 a side), best first, which size
+// how much a market order can fill (lib/liquidity).
+export interface BookView {
+  bid: number;
+  ask: number;
+  bids: BookLevel[];
+  asks: BookLevel[];
+}
+
+function bookView(book: { levels: [{ px: string; sz: string }[], { px: string; sz: string }[]] } | null): BookView {
+  const side = (levels: { px: string; sz: string }[] = []) => levels.map((l) => ({ px: Number(l.px), sz: Number(l.sz) }));
+  const bids = side(book?.levels[0]);
+  const asks = side(book?.levels[1]);
+  return { bid: bids[0]?.px ?? 0, ask: asks[0]?.px ?? 0, bids, asks };
 }
 
 export function useBook(network: Network, coin: string) {
   const queryKey = ["book", network, coin];
-  const live = useLiveFeed<L2BookEvent, ReturnType<typeof bookTop>>(network, queryKey, (c, l, o) => c.l2Book({ coin }, l, o), (e) => bookTop(e));
+  const live = useLiveFeed<L2BookEvent, BookView>(network, queryKey, (c, l, o) => c.l2Book({ coin }, l, o), (e) => bookView(e));
   return useQuery({
     queryKey,
-    queryFn: async () => bookTop(await infoClient(network).l2Book({ coin })),
+    queryFn: async () => bookView(await infoClient(network).l2Book({ coin })),
     refetchInterval: live ? FEED_FALLBACK_MS : 3_000,
   });
 }

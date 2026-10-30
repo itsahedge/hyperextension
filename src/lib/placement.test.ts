@@ -2,7 +2,7 @@ import { ExchangeClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { OrderSpec } from "./orders";
-import { describeSummary, MAX_BATCH_ORDERS, placementHeadline, submitOrders, type PlacementSummary } from "./placement";
+import { describeSummary, MAX_BATCH_ORDERS, orderToast, placementHeadline, submitOrders, type PlacementSummary } from "./placement";
 
 type Action = { type: string; orders: OrderSpec[] };
 
@@ -80,7 +80,7 @@ describe("submitOrders batching", () => {
 });
 
 describe("placementHeadline", () => {
-  const summary = (over: Partial<PlacementSummary>): PlacementSummary => ({ total: 1, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], notSent: 0, ...over });
+  const summary = (over: Partial<PlacementSummary>): PlacementSummary => ({ total: 1, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], canceledSize: 0, notSent: 0, ...over });
 
   it("says plainly that the orders went in", () => {
     expect(placementHeadline(summary({ total: 100, resting: 100 }))).toEqual({ tone: "success", title: "100 orders submitted", placed: true });
@@ -93,5 +93,56 @@ describe("placementHeadline", () => {
     expect(placementHeadline(summary({ total: 450, resting: 200, notSent: 250 }))).toEqual({ tone: "warn", title: "200 of 450 orders submitted", placed: true });
     expect(placementHeadline(summary({ total: 1, errors: ["Post only order would have immediately matched"] }))).toEqual({ tone: "error", title: "Order rejected", placed: false });
     expect(placementHeadline(summary({ total: 5, errors: Array(5).fill("x") }))).toEqual({ tone: "error", title: "5 orders rejected", placed: false });
+  });
+});
+
+describe("orderToast", () => {
+  const summary = (over: Partial<PlacementSummary>): PlacementSummary => ({ total: 1, resting: 0, filled: 0, filledSize: 0, filledAvgPx: 0, waiting: 0, errors: [], canceledSize: 0, notSent: 0, ...over });
+
+  it("titles the toast with the verdict and market, details in the body", () => {
+    expect(orderToast(summary({ total: 1, filled: 1, filledSize: 18165.7, filledAvgPx: 0.512013 }), "KNTQ/USDC")).toEqual({
+      tone: "success",
+      title: "Order submitted on KNTQ/USDC",
+      body: "1 filled (18,165.7 @ 0.512013)",
+    });
+    expect(orderToast(summary({ total: 100, resting: 40, errors: Array(60).fill("Insufficient margin") }), "BTC")).toMatchObject({
+      tone: "warn",
+      title: "40 of 100 orders submitted on BTC",
+    });
+    expect(orderToast(summary({ total: 1, errors: ["Post only order would have immediately matched"] }), "BTC")).toEqual({
+      tone: "error",
+      title: "Order rejected on BTC",
+      body: "1 rejected: Post only order would have immediately matched",
+    });
+  });
+});
+
+describe("partially filled market orders", () => {
+  const order = (s: string): OrderSpec => ({ a: 10334, b: true, p: "0.51334", s, r: false, t: { limit: { tif: "FrontendMarket" } } });
+
+  it("counts the remainder Hyperliquid canceled at the price limit", async () => {
+    // The real 2026-10-30 order: 19,577.32 KNTQ ordered, 18,165.74 filled.
+    const { client: c } = client(() => ({
+      status: "ok",
+      response: { type: "order", data: { statuses: [{ filled: { totalSz: "18165.74", avgPx: "0.5120138465", oid: 1 } }] } },
+    }));
+    const summary = await submitOrders(c, [order("19577.32")]);
+    expect(summary).toMatchObject({ total: 1, filled: 1, filledSize: 18165.74, canceledSize: 1411.58 });
+    expect(placementHeadline(summary)).toEqual({ tone: "warn", title: "Order partially filled", placed: true });
+    expect(orderToast(summary, "KNTQ/USDC")).toEqual({
+      tone: "warn",
+      title: "Order partially filled on KNTQ/USDC",
+      body: "1 filled (18,165.7 @ 0.512014) · 1,411.58 not filled, canceled at your price limit",
+    });
+  });
+
+  it("leaves fully filled orders as submitted", async () => {
+    const { client: c } = client(() => ({
+      status: "ok",
+      response: { type: "order", data: { statuses: [{ filled: { totalSz: "19577.32", avgPx: "0.512", oid: 1 } }] } },
+    }));
+    const summary = await submitOrders(c, [order("19577.32")]);
+    expect(summary.canceledSize).toBe(0);
+    expect(placementHeadline(summary).tone).toBe("success");
   });
 });
