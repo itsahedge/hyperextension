@@ -2,10 +2,11 @@ import type { ExchangeClient } from "@nktkas/hyperliquid";
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/Toaster";
 import { Card, Notice, Segmented, cx, errorMessage } from "@/components/ui";
-import { useActiveAsset, useExchange, usePerpState, usePrefs, useSpotState } from "@/hooks/queries";
+import { useActiveAsset, useExchange, usePerpState, usePrefs, useSpotState, type BookView } from "@/hooks/queries";
 import { clearedInputs, maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState, type Side } from "@/lib/entry";
 import { fmtPrice, fmtSize, fmtUsd } from "@/lib/format";
 import { freeBalance, type Market } from "@/lib/markets";
+import { fillableWithin } from "@/lib/liquidity";
 import { orderToast, placementHeadline, submitOrders, type PlacementSummary } from "@/lib/placement";
 import { OrderTypeMenu, SizeControl, Toggle } from "./controls";
 import { LimitFields, ScaleFields, ScaleSideFields, StopFields, SwarmFields, TpSlFields, TwapFields, type LadderView } from "./fields";
@@ -45,7 +46,7 @@ export function OrderPanel({
   set,
 }: {
   market: Market;
-  book: { bid: number; ask: number } | undefined;
+  book: BookView | undefined;
   s: PanelState;
   set: (patch: Partial<PanelState>) => void;
 }) {
@@ -85,6 +86,11 @@ export function OrderPanel({
   const attempt = tryPlan(s, ctx, isBuy);
   const shown = attempt.plan;
   const overMax = shown !== null && shown.preview.size > sideMax * 1.0001;
+  // A market order is a limit at the slippage bound; Hyperliquid cancels what
+  // the book cannot fill before it. The entry is the first order (TP/SL follow).
+  const marketEntry = shown?.kind === "orders" && s.type === "market" ? shown.orders[0] : undefined;
+  const liquidity =
+    marketEntry && ctx.book ? fillableWithin(isBuy ? ctx.book.asks : ctx.book.bids, isBuy, Number(marketEntry.p), Number(marketEntry.s)) : null;
   const ladder: LadderView | null =
     shown && shown.kind === "orders" && (s.type === "scale" || s.type === "scaleSide")
       ? (() => {
@@ -185,6 +191,14 @@ export function OrderPanel({
             Size is over your max for this side ({fmtSize(sideMax)} {baseToken}). Hyperliquid will likely reject it.
           </Notice>
         )}
+        {liquidity && !liquidity.complete && marketEntry && (
+          <Notice tone="warn">
+            {liquidity.limitedByVisibleBook ? "The visible order book holds only" : "Only"} about {fmtSize(liquidity.size)} {baseToken} (
+            {fmtUsd(liquidity.notional)}, {fillPct(liquidity.size / Number(marketEntry.s))}) within your{" "}
+            {+(slippage * 100).toFixed(2)}% slippage limit ({fmtPrice(marketEntry.p)}). Hyperliquid would cancel the rest. Raise slippage below
+            or use a limit order.
+          </Notice>
+        )}
         <SubmitButton
           label={`${sideLabel(s.side)} ${baseToken}`}
           tone={isBuy ? "up" : "down"}
@@ -204,6 +218,8 @@ export function OrderPanel({
     </Card>
   );
 }
+
+const fillPct = (fraction: number) => (fraction > 0 && fraction < 0.01 ? "<1%" : `${Math.floor(fraction * 100)}%`);
 
 function SubmitButton({ label, tone, sub, busy, onClick }: { label: string; tone: "up" | "down"; sub: string; busy: boolean; onClick: () => void }) {
   return (
