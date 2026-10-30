@@ -113,7 +113,7 @@ function HistoryView({ byCoin, coin, setCoin }: ViewProps) {
                   <Badge tone={isBuy ? "up" : "down"}>{isBuy ? "Buy" : "Sell"}</Badge>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <span className="font-medium">
-                      {byCoin.get(o.coin)?.name ?? o.coin} <span className="text-muted">{o.orderType}</span>
+                      {byCoin.get(o.coin)?.label ?? o.coin} <span className="text-muted">{o.orderType}</span>
                       {o.reduceOnly && <span className="text-muted"> · reduce</span>}
                     </span>
                     <span className="text-muted tabular-nums">

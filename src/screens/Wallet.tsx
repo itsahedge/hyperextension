@@ -3,7 +3,7 @@ import { AuthorizeDialog } from "@/components/AuthorizeDialog";
 import { CopyAddress } from "@/components/CopyAddress";
 import { SpotBalancesCard } from "@/components/SpotBalances";
 import { Button, Card, Loading, Notice, Segmented, Stat, TextField, errorMessage } from "@/components/ui";
-import { useExchange, useMarketData, useMasterAction, usePerpState, useSpotState } from "@/hooks/queries";
+import { isUnified, useAbstraction, useExchange, useMarketData, useMasterAction, usePerpState, useSpotState } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
 import { fmtUsd } from "@/lib/format";
 import { freeBalance } from "@/lib/markets";
@@ -16,29 +16,43 @@ export function Wallet() {
   const perp = usePerpState();
   const spot = useSpotState();
   const markets = useMarketData(config.network);
+  const mode = useAbstraction();
 
-  if (perp.isPending || spot.isPending) return <Loading />;
+  if (perp.isPending || spot.isPending || mode.isPending) return <Loading />;
   if (perp.isError) return <Notice tone="error">{errorMessage(perp.error)}</Notice>;
   if (spot.isError) return <Notice tone="error">{errorMessage(spot.error)}</Notice>;
 
   const usdc = spot.data.balances.find((b) => b.coin === "USDC");
   const spotUsdcFree = usdc ? freeBalance(usdc) : 0;
+  // Unified / portfolio margin: one USDC balance in the spot state backs spot
+  // and every perp dex, so there is no separate perp balance to move to.
+  const unified = isUnified(mode.data);
 
   return (
     <div className="flex flex-col gap-3">
-      <Card title="Perp account">
-        <div className="grid grid-cols-2 gap-2">
-          <Stat label="Equity" value={fmtUsd(perp.data.marginSummary.accountValue)} />
-          <Stat label="Withdrawable" value={fmtUsd(perp.data.withdrawable)} />
-        </div>
-      </Card>
+      {unified ? (
+        <Card title="Trading account">
+          <div className="grid grid-cols-2 gap-2">
+            <Stat label="Mode" value={mode.data === "portfolioMargin" ? "Portfolio margin" : "Unified"} />
+            <Stat label="Available USDC" value={fmtUsd(spotUsdcFree)} />
+          </div>
+          <p className="mt-2 text-[11px] text-faint">One USDC balance backs spot and every perp dex, HIP-3 included.</p>
+        </Card>
+      ) : (
+        <Card title="Perp account">
+          <div className="grid grid-cols-2 gap-2">
+            <Stat label="Equity" value={fmtUsd(perp.data.marginSummary.accountValue)} />
+            <Stat label="Withdrawable" value={fmtUsd(perp.data.withdrawable)} />
+          </div>
+        </Card>
+      )}
 
       <SpotBalancesCard balances={spot.data.balances} markets={markets.data?.markets} />
 
       <DepositCard />
       <UnitDepositCard />
-      <TransferCard spotFree={spotUsdcFree} perpFree={Number(perp.data.withdrawable)} usdcToken={markets.data?.usdcToken} />
-      <WithdrawCard withdrawable={Number(perp.data.withdrawable)} />
+      {!unified && <TransferCard spotFree={spotUsdcFree} perpFree={Number(perp.data.withdrawable)} usdcToken={markets.data?.usdcToken} />}
+      <WithdrawCard withdrawable={unified ? spotUsdcFree : Number(perp.data.withdrawable)} />
 
       <Card title="Hyperliquid address">
         <p className="mb-2 text-xs text-muted">

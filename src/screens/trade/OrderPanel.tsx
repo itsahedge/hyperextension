@@ -2,7 +2,7 @@ import type { ExchangeClient } from "@nktkas/hyperliquid";
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/Toaster";
 import { Card, Notice, Segmented, cx, errorMessage } from "@/components/ui";
-import { useActiveAsset, useExchange, usePerpState, usePrefs, useSpotState, type BookView } from "@/hooks/queries";
+import { allPositions, useActiveAsset, useExchange, usePerpStates, usePrefs, useSpotState, type BookView } from "@/hooks/queries";
 import { clearedInputs, maxSizes, planEntry, POST_TYPES, referencePrice, TPSL_TYPES, type EntryPlan, type PanelState, type Side } from "@/lib/entry";
 import { fmtPrice, fmtSize, fmtUsd } from "@/lib/format";
 import { freeBalance, type Market } from "@/lib/markets";
@@ -52,14 +52,14 @@ export function OrderPanel({
 }) {
   const isPerp = market.kind === "perp";
   const asset = useActiveAsset(isPerp ? market.coin : null);
-  const perp = usePerpState();
+  const perp = usePerpStates();
   const spot = useSpotState();
   const prefs = usePrefs();
   const slippage = prefs.data?.slippage ?? 0.01;
   const ctx = { market, book: book && book.bid > 0 ? book : undefined, slippage };
   const refPx = referencePrice(s, ctx);
 
-  const position = Number(perp.data?.assetPositions.find((p) => p.position.coin === market.coin)?.position.szi ?? 0);
+  const position = Number(perp.data ? (allPositions(perp.data).find((p) => p.coin === market.coin)?.szi ?? 0) : 0);
   const [baseToken, quoteToken] = isPerp ? [market.name, "USDC"] : market.name.split("/");
   const spotFree = (coin: string | undefined) => {
     const b = spot.data?.balances.find((x) => x.coin === coin);
@@ -77,8 +77,16 @@ export function OrderPanel({
   const isBuy = s.side === "buy";
   const sideMax = isBuy ? maxes.buy : maxes.sell;
   // Perps: free margin. Spot: what this side spends (USDC to buy, the token to sell).
+  // Perps: Hyperliquid's availableToTrade for this asset and side, in the
+  // dex's collateral; correct for standard, unified and HIP-3 alike, unlike a
+  // per-dex withdrawable.
+  const tradable = asset.data?.availableToTrade[isBuy ? 0 : 1];
   const available = isPerp
-    ? fmtUsd(Number(perp.data?.withdrawable ?? 0))
+    ? tradable === undefined
+      ? "…"
+      : market.collateral === "USDC"
+        ? fmtUsd(Number(tradable))
+        : `${fmtSize(tradable, 2)} ${market.collateral}`
     : isBuy
       ? `${fmtSize(spotFree(quoteToken))} ${quoteToken}`
       : `${fmtSize(spotFree(baseToken))} ${baseToken}`;
@@ -120,7 +128,7 @@ export function OrderPanel({
       return;
     }
     setLastError(null);
-    const marketName = market.name;
+    const marketName = market.label;
     submit.mutate(attempt.plan, {
       onSuccess: (out) => {
         toast(

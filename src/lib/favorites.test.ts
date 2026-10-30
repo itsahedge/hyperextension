@@ -6,6 +6,11 @@ import type { Market } from "./markets";
 const m = (coin: string): Market => ({
   kind: "perp",
   name: coin,
+  label: coin,
+  dex: "",
+  collateral: "USDC",
+  marginMode: "normal",
+  growthMode: false,
   coin,
   assetId: 0,
   szDecimals: 2,

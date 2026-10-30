@@ -15,6 +15,11 @@ import { buildTwap } from "./twap";
 const btc: Market = {
   kind: "perp",
   name: "BTC",
+  label: "BTC",
+  dex: "",
+  collateral: "USDC",
+  marginMode: "normal",
+  growthMode: false,
   coin: "BTC",
   assetId: 0,
   szDecimals: 5,

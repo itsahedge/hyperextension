@@ -1,26 +1,29 @@
 import type { ISubscription, SubscriptionClient } from "@nktkas/hyperliquid";
+import type { ClearinghouseStateResponse, FrontendOpenOrdersResponse } from "@nktkas/hyperliquid/api/info";
 import type {
   ActiveAssetCtxEvent,
   ActiveAssetDataEvent,
   ActiveSpotAssetCtxEvent,
+  AllDexsAssetCtxsEvent,
+  AllDexsClearinghouseStateEvent,
   ClearinghouseStateEvent,
   L2BookEvent,
   OpenOrdersEvent,
   SpotStateEvent,
 } from "@nktkas/hyperliquid/api/subscription";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
 import type { BookLevel } from "@/lib/liquidity";
-import { buildMarkets, marketByCoin, usdcTokenId, withLiveCtx, type Market } from "@/lib/markets";
+import { dexOfCoin, marketData, perpDexNames, withDexCtxs, withLiveCtx, type Market, type MarketData, type PerpCtx, type RawMarkets } from "@/lib/markets";
 import { CCTP_CONFIG, fetchFeeQuote } from "@/lib/cctp";
 import { arbitrumBalances } from "@/lib/cctpClient";
 import { loadFavorites, toggleStoredFavorite } from "@/lib/favorites";
 import { loadPrefs } from "@/lib/prefs";
 import { withMasterKey, type Auth } from "@/lib/session";
 import { fetchDepositAddress, type UnitAsset } from "@/lib/unit";
-import { useLiveFeed } from "./live";
+import { useLiveFeed, useLiveFeeds } from "./live";
 import { useUnlocked } from "./session";
 
 // Polling intervals. Every REST call shares Hyperliquid's 1200/min weight
@@ -35,20 +38,65 @@ const HISTORY_MS = 30_000;
 const FEED_FALLBACK_MS = 60_000;
 const DAY_MS = 86_400_000;
 
-export function useMarketData(network: Network) {
-  return useQuery({
-    queryKey: ["markets", network],
-    queryFn: async () => {
-      const info = infoClient(network);
-      const [perp, spot] = await Promise.all([info.metaAndAssetCtxs(), info.spotMetaAndAssetCtxs()]);
-      const markets = buildMarkets(perp, spot);
-      return { markets, byCoin: marketByCoin(markets), usdcToken: usdcTokenId(spot[0]) };
-    },
-    refetchInterval: MARKETS_MS,
-  });
+// How long the all-dex price feed may take to confirm before HIP-3 prices
+// are fetched over REST instead (10 dexs x weight 20).
+const FEED_GRACE_MS = 4_000;
+
+// HIP-3 prices per dex over REST: only when the allDexsAssetCtxs feed is not up.
+async function fetchHip3Ctxs(network: Network, metas: RawMarkets["metas"]): Promise<Map<string, PerpCtx[]>> {
+  const dexs = perpDexNames(metas).slice(1);
+  const info = infoClient(network);
+  const results = await Promise.all(dexs.map(async (dex) => [dex, (await info.metaAndAssetCtxs({ dex }))[1]] as const));
+  return new Map(results);
 }
 
-type MarketData = NonNullable<ReturnType<typeof useMarketData>["data"]>;
+// The latest allDexsAssetCtxs entries per network. The feed's first event can
+// arrive before the definitions load; the query function starts from it.
+const latestDexCtxs = new Map<Network, [string, PerpCtx[]][]>();
+
+// Every perp dex (main + HIP-3) and spot. Definitions come over REST; prices
+// for every perp dex stream from the allDexsAssetCtxs feed (~120 KB every few
+// seconds), which also keeps HIP-3 markets listed without per-dex requests.
+export function useMarketData(network: Network) {
+  const queryClient = useQueryClient();
+  const queryKey = ["markets", network];
+  const live = useLiveFeed<AllDexsAssetCtxsEvent, MarketData>(
+    network,
+    queryKey,
+    (c, l, o) => c.allDexsAssetCtxs(l, o),
+    (e, prev) => {
+      latestDexCtxs.set(network, e.ctxs);
+      return prev ? withDexCtxs(prev, e.ctxs) : prev;
+    },
+  );
+  const [restHip3, setRestHip3] = useState(false);
+  useEffect(() => {
+    if (live) {
+      setRestHip3(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setRestHip3(true);
+      void queryClient.invalidateQueries({ queryKey: ["markets", network] });
+    }, FEED_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [live, network, queryClient]);
+
+  return useQuery({
+    queryKey,
+    queryFn: async (): Promise<MarketData> => {
+      const info = infoClient(network);
+      const [perp, spot, metas] = await Promise.all([info.metaAndAssetCtxs(), info.spotMetaAndAssetCtxs(), info.allPerpMetas()]);
+      if (restHip3) return marketData({ perp, spot, metas }, await fetchHip3Ctxs(network, metas));
+      // HIP-3 prices come from the feed: start from its latest event so those
+      // markets are listed (main perps keep the fresh REST contexts).
+      const fromFeed = (latestDexCtxs.get(network) ?? []).filter(([dex]) => dex !== "");
+      const prev = queryClient.getQueryData<MarketData>(["markets", network]);
+      return withDexCtxs(marketData({ perp, spot, metas }, prev?.hip3Ctxs ?? new Map()), fromFeed);
+    },
+    refetchInterval: live ? 5 * 60_000 : MARKETS_MS,
+  });
+}
 
 // Live prices for the market being traded, between full market refreshes.
 export function useLiveMarketCtx(network: Network, market: Market) {
@@ -93,11 +141,102 @@ export const useSpotState = () =>
     apply: (e: SpotStateEvent) => e.spotState,
   });
 
-export const useOpenOrders = () =>
-  useAccountQuery("openOrders", (n, user) => infoClient(n).frontendOpenOrders({ user }), ORDERS_MS, {
-    subscribe: (c, user, l, o) => c.openOrders({ user }, l, o),
-    apply: (e: OpenOrdersEvent) => (e.dex === "" ? e.orders : undefined),
+// Every perp dex name, "" first, from the market definitions.
+export function usePerpDexs(network: Network): string[] | undefined {
+  const metas = useMarketData(network).data?.raw.metas;
+  return useMemo(() => (metas ? perpDexNames(metas) : undefined), [metas]);
+}
+
+type OpenOrders = FrontendOpenOrdersResponse;
+
+// Open orders on every perp dex. Hyperliquid serves them per dex only (no
+// "all" value), so each dex has its own websocket feed; REST asks the main
+// dex (which includes spot) and only those other dexs whose feed is not up
+// after the grace period.
+export function useOpenOrders() {
+  const { config } = useUnlocked();
+  const dexs = usePerpDexs(config.network);
+  const queryClient = useQueryClient();
+  const queryKey = ["openOrders", config.network, config.address];
+  const live = useLiveFeeds<OpenOrdersEvent, OpenOrders>(
+    config.network,
+    queryKey,
+    dexs,
+    (c, dex, l, o) => c.openOrders({ user: config.address, dex }, l, o),
+    (dex, e, prev) => (e.dex === dex ? [...(prev ?? []).filter((o) => dexOfCoin(o.coin) !== dex), ...e.orders] : prev),
+  );
+  const [graceOver, setGraceOver] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setGraceOver(true), FEED_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  const restDexs = (dexs ?? [""]).filter((d) => d === "" || (graceOver && !live.has(d)));
+  const allLive = dexs !== undefined && dexs.every((d) => live.has(d));
+
+  return useQuery({
+    queryKey,
+    queryFn: async () => {
+      const info = infoClient(config.network);
+      const fetched = await Promise.all(restDexs.map((dex) => info.frontendOpenOrders({ user: config.address, dex })));
+      // Orders of dexs not fetched here come from their feeds; keep them.
+      const prev = queryClient.getQueryData<OpenOrders>(queryKey) ?? [];
+      return [...prev.filter((o) => !restDexs.includes(dexOfCoin(o.coin))), ...fetched.flat()];
+    },
+    refetchInterval: allLive ? FEED_FALLBACK_MS : ORDERS_MS,
   });
+}
+
+// "unifiedAccount" | "portfolioMargin" | "disabled" | "default" |
+// "dexAbstraction". "default" behaves as standard: live "default" accounts
+// hold USDC in the perp state, not spot. Unified and
+// portfolio margin keep one balance per asset in the spot clearinghouse state
+// for spot and every perp dex; per-dex perp states are not meaningful for
+// balances there (Hyperliquid "Account abstraction modes" docs).
+export const useAbstraction = () =>
+  useAccountQuery("abstraction", (n, user) => infoClient(n).userAbstraction({ user }), 5 * 60_000);
+
+export const isUnified = (mode: string | undefined) => mode === "unifiedAccount" || mode === "portfolioMargin";
+
+// Hyperliquid's own account value (spot + every perp dex, any abstraction
+// mode): the latest point of portfolio's "day" history, computed at request
+// time. Weight 20.
+export const useAccountValue = () =>
+  useAccountQuery(
+    "accountValue",
+    async (n, user) => {
+      const periods = await infoClient(n).portfolio({ user });
+      const last = periods.find(([p]) => p === "day")?.[1].accountValueHistory.at(-1);
+      return last ? Number(last[1]) : null;
+    },
+    HISTORY_MS,
+  );
+
+export type PerpStates = [dex: string, state: ClearinghouseStateResponse][];
+
+export const allPositions = (states: PerpStates) => states.flatMap(([, s]) => s.assetPositions.map((p) => p.position));
+
+// Perp account state on every dex (positions, margin), from one
+// allDexsClearinghouseState feed; REST asks each dex (weight 2 each).
+export function usePerpStates() {
+  const { config } = useUnlocked();
+  const dexs = usePerpDexs(config.network);
+  const queryKey = ["perpStates", config.network, config.address];
+  const live = useLiveFeed<AllDexsClearinghouseStateEvent, PerpStates>(
+    config.network,
+    queryKey,
+    (c, l, o) => c.allDexsClearinghouseState({ user: config.address }, l, o),
+    (e) => e.clearinghouseStates,
+  );
+  return useQuery({
+    queryKey,
+    enabled: dexs !== undefined,
+    queryFn: async (): Promise<PerpStates> => {
+      const info = infoClient(config.network);
+      return Promise.all(dexs!.map(async (dex) => [dex, await info.clearinghouseState({ user: config.address, dex })] as [string, ClearinghouseStateResponse]));
+    },
+    refetchInterval: live ? FEED_FALLBACK_MS : ORDERS_MS,
+  });
+}
 
 // At most the 2000 most recent orders (Hyperliquid info endpoint docs).
 export const useOrderHistory = () =>

@@ -21,7 +21,7 @@ export function ActiveTwaps({ byCoin }: { byCoin: Map<string, Market> }) {
               <Badge tone={row.state.side === "B" ? "up" : "down"}>{row.state.side === "B" ? "Buy" : "Sell"}</Badge>
               <div className="flex min-w-0 flex-col">
                 <span className="font-medium">
-                  {m?.name ?? row.state.coin} <span className="text-muted">{row.state.minutes}m TWAP</span>
+                  {m?.label ?? row.state.coin} <span className="text-muted">{row.state.minutes}m TWAP</span>
                 </span>
                 <span className="text-muted tabular-nums">
                   {fmtSize(row.state.executedSz)} / {fmtSize(row.state.sz)} ({Math.round(done * 100)}%)

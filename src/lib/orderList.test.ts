@@ -19,6 +19,11 @@ import { cancelOrders, describeCancels, summarizeCancels } from "./placement";
 const market = (coin: string, assetId: number): Market => ({
   kind: "perp",
   name: coin,
+  label: coin,
+  dex: "",
+  collateral: "USDC",
+  marginMode: "normal",
+  growthMode: false,
   coin,
   assetId,
   szDecimals: 3,

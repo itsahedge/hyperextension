@@ -46,25 +46,28 @@ function LeverageDialog({
   market: Market;
   current: { type: "cross" | "isolated"; value: number };
 }) {
+  // noCross / strictIsolated markets (common on HIP-3) reject cross margin.
+  const isolatedOnly = market.marginMode === "noCross" || market.marginMode === "strictIsolated";
   const [value, setValue] = useState(String(current.value));
-  const [mode, setMode] = useState(current.type);
+  const [mode, setMode] = useState(isolatedOnly ? "isolated" : current.type);
   const update = useExchange((client, v: number) => client.updateLeverage({ asset: market.assetId, isCross: mode === "cross", leverage: v }));
   const max = market.maxLeverage ?? 1;
   const n = Number(value);
   const invalid = !Number.isInteger(n) || n < 1 || n > max;
 
   return (
-    <Modal open={open} onClose={onClose} title={`${market.name} leverage`}>
+    <Modal open={open} onClose={onClose} title={`${market.label} leverage`}>
       <div className="flex flex-col gap-3">
         <Segmented
           label="Margin mode"
           value={mode}
           onChange={setMode}
           options={[
-            { value: "cross", label: "Cross" },
+            { value: "cross", label: "Cross", disabled: isolatedOnly },
             { value: "isolated", label: "Isolated" },
           ]}
         />
+        {isolatedOnly && <p className="text-[11px] text-faint">This market only allows isolated margin.</p>}
         <TextField label="Leverage" inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value)} suffix={`x (max ${max})`} error={invalid ? `Whole number from 1 to ${max}` : null} />
         <input type="range" min={1} max={max} value={invalid ? 1 : n} onChange={(e) => setValue(e.target.value)} aria-label="Leverage slider" className="h-1.5 w-full accent-(--color-accent)" />
         {update.isError && <Notice tone="error">{errorMessage(update.error)}</Notice>}

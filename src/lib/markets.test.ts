@@ -1,6 +1,19 @@
-import type { MetaAndAssetCtxsResponse, SpotMetaAndAssetCtxsResponse } from "@nktkas/hyperliquid/api/info";
+import type { AllPerpMetasResponse, MetaAndAssetCtxsResponse, SpotMetaAndAssetCtxsResponse } from "@nktkas/hyperliquid/api/info";
 import { describe, expect, it } from "vitest";
-import { buildMarkets, freeBalance, marketByCoin, spotHoldings, spotTokenPrice, spotUsdValue, usdcTokenId, withLiveCtx } from "./markets";
+import {
+  buildMarkets,
+  dexOfCoin,
+  freeBalance,
+  marketByCoin,
+  marketData,
+  spotHoldings,
+  spotTokenPrice,
+  spotUsdValue,
+  usdcTokenId,
+  withDexCtxs,
+  withLiveCtx,
+  type PerpCtx,
+} from "./markets";
 
 const perpCtx = (markPx: string, dayNtlVlm: string) => ({
   prevDayPx: markPx,
@@ -58,7 +71,7 @@ const spot = [
       { tokens: [150, 0], name: "@107", index: 107, isCanonical: false },
       { tokens: [999, 0], name: "@500", index: 500, isCanonical: false },
     ],
-    tokens: [token("USDC", 0, 8), token("PURR", 1, 0), token("HYPE", 150, 2)],
+    tokens: [token("USDC", 0, 8), token("PURR", 1, 0), token("HYPE", 150, 2), token("USDH", 360, 6)],
   },
   [spotCtx("PURR/USDC", "0.2"), spotCtx("@107", "40", null)],
 ] as unknown as SpotMetaAndAssetCtxsResponse;
@@ -92,6 +105,89 @@ describe("buildMarkets", () => {
   it("lists perps before spot", () => {
     const firstSpot = markets.findIndex((m) => m.kind === "spot");
     expect(markets.slice(firstSpot).every((m) => m.kind === "spot")).toBe(true);
+  });
+});
+
+// allPerpMetas: index = perp dex index (perpDexs order); 0 is the main dex.
+const metas = [
+  perp[0],
+  {
+    universe: [
+      { name: "xyz:XYZ100", szDecimals: 4, maxLeverage: 30, marginTableId: 30, growthMode: "enabled" },
+      { name: "xyz:HOOD", szDecimals: 2, maxLeverage: 10, marginTableId: 10, onlyIsolated: true, marginMode: "noCross" },
+      { name: "xyz:GONE", szDecimals: 2, maxLeverage: 10, marginTableId: 10, isDelisted: true },
+    ],
+    marginTables: [],
+    collateralToken: 0,
+  },
+  {
+    universe: [{ name: "flx:TSLA", szDecimals: 3, maxLeverage: 10, marginTableId: 10, onlyIsolated: true, marginMode: "strictIsolated" }],
+    marginTables: [],
+    collateralToken: 360,
+  },
+  { universe: [{ name: "nope:X", szDecimals: 1, maxLeverage: 3, marginTableId: 3 }], marginTables: [], collateralToken: 0 },
+] as unknown as AllPerpMetasResponse;
+const hip3Ctxs = new Map<string, PerpCtx[]>([
+  ["xyz", [perpCtx("28600", "3000"), perpCtx("75", "50"), perpCtx("1", "1")] as unknown as PerpCtx[]],
+  ["flx", [perpCtx("400", "200")] as unknown as PerpCtx[]],
+]);
+
+describe("buildMarkets with HIP-3 dexs", () => {
+  const markets = buildMarkets(perp, spot, { metas, ctxs: hip3Ctxs });
+  const by = marketByCoin(markets);
+
+  it("uses 100000 + dex index * 10000 + index as the asset id (Hyperliquid asset ID docs)", () => {
+    expect(by.get("xyz:XYZ100")?.assetId).toBe(110_000);
+    expect(by.get("xyz:HOOD")?.assetId).toBe(110_001);
+    expect(by.get("flx:TSLA")?.assetId).toBe(120_000);
+  });
+
+  it("names a HIP-3 market by its symbol, labels it with its dex, and keeps the API coin", () => {
+    expect(by.get("xyz:XYZ100")).toMatchObject({ kind: "perp", name: "XYZ100", label: "XYZ100 (xyz)", dex: "xyz", coin: "xyz:XYZ100" });
+    expect(by.get("BTC")).toMatchObject({ name: "BTC", label: "BTC", dex: "" });
+    expect(by.get("@107")).toMatchObject({ label: "HYPE/USDC", dex: "", marginMode: null });
+  });
+
+  it("carries collateral, margin mode and growth mode", () => {
+    expect(by.get("xyz:XYZ100")).toMatchObject({ collateral: "USDC", marginMode: "normal", growthMode: true });
+    expect(by.get("xyz:HOOD")).toMatchObject({ marginMode: "noCross", growthMode: false });
+    expect(by.get("flx:TSLA")).toMatchObject({ collateral: "USDH", marginMode: "strictIsolated" });
+    expect(by.get("BTC")).toMatchObject({ collateral: "USDC", marginMode: "normal" });
+  });
+
+  it("skips delisted assets and dexs without price contexts yet", () => {
+    expect(by.has("xyz:GONE")).toBe(false);
+    expect(by.has("nope:X")).toBe(false);
+  });
+
+  it("sorts every perp, main and HIP-3, by volume before spot", () => {
+    expect(markets.filter((m) => m.kind === "perp").map((m) => m.coin)).toEqual(["xyz:XYZ100", "ETH", "flx:TSLA", "BTC", "xyz:HOOD"]);
+    const firstSpot = markets.findIndex((m) => m.kind === "spot");
+    expect(markets.slice(firstSpot).every((m) => m.kind === "spot")).toBe(true);
+  });
+});
+
+describe("marketData / withDexCtxs", () => {
+  const base = marketData({ perp, spot, metas }, new Map());
+
+  it("lists main perps and spot before HIP-3 contexts arrive", () => {
+    expect(base.byCoin.has("BTC")).toBe(true);
+    expect(base.byCoin.has("xyz:XYZ100")).toBe(false);
+    expect(base.usdcToken).toBe("USDC:0x00000000000000000000000000000000");
+  });
+
+  it("adds HIP-3 markets and refreshes main perp prices from an allDexsAssetCtxs event", () => {
+    const next = withDexCtxs(base, [
+      ["", [perpCtx("101000", "100"), perpCtx("1", "9999"), perpCtx("4100", "500")] as unknown as PerpCtx[]],
+      ["xyz", [perpCtx("28700", "3000"), perpCtx("76", "50")] as unknown as PerpCtx[]],
+    ]);
+    expect(next.byCoin.get("BTC")?.markPx).toBe(101000);
+    expect(next.byCoin.get("xyz:XYZ100")?.markPx).toBe(28700);
+    expect(next.byCoin.get("xyz:HOOD")?.assetId).toBe(110_001);
+    // A later event without a dex keeps that dex's last contexts.
+    const later = withDexCtxs(next, [["", [perpCtx("102000", "100"), perpCtx("1", "1"), perpCtx("4200", "500")] as unknown as PerpCtx[]]]);
+    expect(later.byCoin.get("xyz:XYZ100")?.markPx).toBe(28700);
+    expect(later.byCoin.get("BTC")?.markPx).toBe(102000);
   });
 });
 
@@ -192,5 +288,14 @@ describe("withLiveCtx", () => {
 
   it("ignores coins it does not know", () => {
     expect(withLiveCtx(data, "NOPE", perpCtx("1", "1"))).toBe(data);
+  });
+});
+
+describe("dexOfCoin", () => {
+  it("reads the perp dex from an API coin", () => {
+    expect(dexOfCoin("xyz:TSLA")).toBe("xyz");
+    expect(dexOfCoin("BTC")).toBe("");
+    expect(dexOfCoin("@107")).toBe("");
+    expect(dexOfCoin("PURR/USDC")).toBe("");
   });
 });
