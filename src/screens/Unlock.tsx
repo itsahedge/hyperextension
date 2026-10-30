@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Button, ConfirmDialog, Notice, TextField, errorMessage } from "@/components/ui";
 import { useSession } from "@/hooks/session";
-import { shortAddress } from "@/lib/format";
 import { unlock, wipe, type Auth } from "@/lib/session";
 
 export function Unlock() {
@@ -29,31 +28,15 @@ export function Unlock() {
     void run({ kind: "password", password });
   };
 
+  const switchTo = (password: boolean) => {
+    setError(null);
+    setShowPassword(password);
+  };
+
   return (
-    <div className="flex h-full flex-col justify-center gap-6 p-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-lg font-semibold">Unlock</h1>
-        {session.status === "locked" && (
-          <p className="text-xs text-muted">
-            {shortAddress(session.config.address)} on {session.config.network}
-          </p>
-        )}
-      </div>
-
-      {passkeys.length > 0 && !showPassword && (
-        <div className="flex flex-col gap-3">
-          {error && <Notice tone="error">{error}</Notice>}
-          <Button variant="primary" busy={busy} autoFocus onClick={() => void run({ kind: "passkey" })}>
-            Unlock with passkey
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => { setError(null); setShowPassword(true); }}>
-            Use password instead
-          </Button>
-        </div>
-      )}
-
-      {showPassword && (
-        <form onSubmit={submit} className="flex flex-col gap-3">
+    <div className="flex h-full flex-col justify-center gap-2 p-6">
+      {showPassword ? (
+        <form onSubmit={submit} className="flex flex-col gap-2">
           <TextField
             label="Password"
             type="password"
@@ -66,17 +49,19 @@ export function Unlock() {
           <Button type="submit" variant="primary" busy={busy} disabled={!password}>
             Unlock
           </Button>
-          {passkeys.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => { setError(null); setShowPassword(false); }}>
-              Use passkey instead
-            </Button>
-          )}
         </form>
+      ) : (
+        <>
+          {error && <Notice tone="error">{error}</Notice>}
+          <Button variant="primary" busy={busy} autoFocus onClick={() => void run({ kind: "passkey" })}>
+            Unlock with passkey
+          </Button>
+        </>
       )}
-
-      <Button variant="ghost" size="sm" onClick={() => setResetOpen(true)}>
-        Forgot password? Reset
-      </Button>
+      {passkeys.length > 0 && (
+        <Button onClick={() => switchTo(!showPassword)}>{showPassword ? "Use passkey" : "Use password"}</Button>
+      )}
+      <Button onClick={() => setResetOpen(true)}>Forgot password? Reset</Button>
       <ConfirmDialog
         open={resetOpen}
         onClose={() => setResetOpen(false)}
