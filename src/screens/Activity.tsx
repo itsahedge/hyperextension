@@ -87,11 +87,14 @@ function Fills() {
           sub={fmtTime(f.time)}
           right={`${fmtSize(f.sz)} @ ${fmtPrice(f.px)}`}
           rightSub={
-            Number(f.closedPnl) !== 0 ? (
-              <span className={toneOf(f.closedPnl)}>{fmtSignedUsd(f.closedPnl)}</span>
-            ) : (
-              `fee ${fmtSize(f.fee, 4)} ${f.feeToken}`
-            )
+            <>
+              {Number(f.closedPnl) !== 0 && (
+                <>
+                  <span className={toneOf(f.closedPnl)}>{fmtSignedUsd(f.closedPnl)}</span> ·{" "}
+                </>
+              )}
+              fee {fmtSize(f.fee, 4)} {f.feeToken}
+            </>
           }
         />
       )}
