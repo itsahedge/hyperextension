@@ -107,7 +107,8 @@ function VpnControls({ conf }: { conf: string }) {
   // undefined: nothing picked yet, follow the saved choice; null: the .conf's own server.
   const location = picked === undefined ? s?.location : (picked ?? undefined);
   const switching = s?.connected && !sameLocation(location, s.location);
-  const busy = toggle.isPending;
+  // Also busy while a connect started elsewhere (unlock reconnect, the banner) runs.
+  const busy = toggle.isPending || Boolean(s?.connecting);
   const label = (l?: VpnLocation) => (l ? `${locationLabel(l)} · ${serverName(l)}` : `Server in config (${summary?.endpoint ?? "?"})`);
 
   return (
@@ -163,7 +164,7 @@ function VpnControls({ conf }: { conf: string }) {
       {state.isError && <Notice tone="error">{errorMessage(state.error)}</Notice>}
       {busy ? (
         <span className="flex items-center gap-2 text-xs text-muted">
-          <Spinner /> {toggle.variables?.on ? "Connecting and checking the exit IP…" : "Turning off…"}
+          <Spinner /> {toggle.isPending && toggle.variables?.on === false ? "Turning off…" : "Connecting and checking the exit IP…"}
         </span>
       ) : (
         s && <VpnStatus state={s} />

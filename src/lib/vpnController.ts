@@ -51,6 +51,9 @@ export class VpnController {
   private pending = new Map<number, { resolve: (r: HelperReply) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private info: { endpoint: string; exit: VpnExit; direct: VpnExit } | null = null;
   private error: string | undefined;
+  // The connect in flight; a second up() (e.g. the popup's while the unlock
+  // reconnect runs) waits for it instead of starting another.
+  private connecting: Promise<void> | null = null;
 
   constructor(private deps: VpnDeps) {}
 
@@ -75,6 +78,7 @@ export class VpnController {
     return {
       enabled: settings.enabled,
       connected: this.info !== null,
+      connecting: this.connecting !== null,
       location: settings.location,
       endpoint: this.info?.endpoint,
       exit: this.info?.exit,
@@ -95,6 +99,23 @@ export class VpnController {
   }
 
   async up(conf: string, location?: VpnLocation): Promise<VpnState> {
+    this.connecting ??= this.connect(conf, location).finally(() => {
+      this.connecting = null;
+    });
+    await this.connecting;
+    return this.state();
+  }
+
+  // After unlock (session storage, and so the decrypted .conf, is cleared on
+  // extension reload and browser restart): reconnect if the VPN is meant to
+  // be on and is not connected.
+  async autoConnect(conf: string): Promise<VpnState> {
+    const settings = await this.deps.load();
+    if (!settings.enabled || this.info) return this.state();
+    return this.up(conf, settings.location);
+  }
+
+  private async connect(conf: string, location?: VpnLocation) {
     await this.deps.save({ enabled: true, location });
     // Fail closed first: nothing routed may go direct while connecting.
     await this.block();
@@ -112,7 +133,6 @@ export class VpnController {
       this.error = (err as Error).message;
       await this.block();
     }
-    return this.state();
   }
 
   async down(): Promise<VpnState> {

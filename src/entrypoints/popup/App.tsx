@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Badge, Button, cx } from "@/components/ui";
+import { Badge, Button, Spinner, cx } from "@/components/ui";
 import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
-import { useVpnState } from "@/hooks/vpn";
+import { useRefetchWhenVpnConnects, useVpnState, useVpnSwitch } from "@/hooks/vpn";
 import { lock } from "@/lib/session";
 import { Activity } from "@/screens/Activity";
 import { Orders } from "@/screens/Orders";
@@ -125,6 +125,7 @@ function Shell() {
         </Button>
       </header>
 
+      <VpnBanner />
       <main className="min-h-0 flex-1 overflow-y-auto p-3">
         <Screen />
       </main>
@@ -168,5 +169,37 @@ function VpnBadge() {
     <Badge tone="up" className="min-w-0 truncate" title={`${label}${exit ? ` (${exit.ip})` : ""}`}>
       {label}
     </Badge>
+  );
+}
+
+// Shown while the VPN should be on but is not: routed requests are blocked
+// (kill switch), so screens would otherwise show bare fetch errors.
+function VpnBanner() {
+  const { secrets } = useUnlocked();
+  const vpn = useVpnState();
+  const toggle = useVpnSwitch();
+  useRefetchWhenVpnConnects(vpn.data?.connected);
+  const s = vpn.data;
+  if (!s?.enabled || s.connected) return null;
+  if (s.connecting || toggle.isPending) {
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2 text-xs text-muted">
+        <Spinner /> Connecting VPN… Hyperliquid requests wait until it is up.
+      </div>
+    );
+  }
+  const conf = secrets.vpnConf;
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-down/10 px-3 py-2 text-xs">
+      <span className="min-w-0 flex-1 text-down">
+        VPN is down, so Hyperliquid, Arbitrum, Circle and Unit requests are blocked.
+        {s.error && <span className="block text-[11px] text-muted">{s.error}</span>}
+      </span>
+      {conf && (
+        <Button size="sm" onClick={() => toggle.mutate({ on: true, conf, location: s.location })}>
+          Reconnect
+        </Button>
+      )}
+    </div>
   );
 }
