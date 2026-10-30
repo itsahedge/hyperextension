@@ -13,7 +13,7 @@ export function Activity() {
   return (
     <TabGroup className="flex flex-col gap-3">
       <TabList className="flex rounded-md bg-surface p-0.5">
-        {["Fills", "Funding", "Transfers"].map((label) => (
+        {["Trade History", "Funding", "Transfers"].map((label) => (
           <Tab
             key={label}
             className="h-8 flex-1 rounded-[5px] text-xs font-medium text-muted outline-none data-focus:outline-2 data-focus:outline-accent data-selected:bg-raised data-selected:text-fg"
@@ -77,7 +77,7 @@ function Fills() {
   return (
     <List
       query={fills}
-      empty="No fills yet"
+      empty="No trades yet"
       render={(f) => (
         <Row
           key={`${f.tid}-${f.oid}`}
