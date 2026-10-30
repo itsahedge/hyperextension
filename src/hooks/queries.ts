@@ -1,18 +1,36 @@
+import type { ISubscription, SubscriptionClient } from "@nktkas/hyperliquid";
+import type {
+  ActiveAssetCtxEvent,
+  ActiveAssetDataEvent,
+  ActiveSpotAssetCtxEvent,
+  ClearinghouseStateEvent,
+  L2BookEvent,
+  OpenOrdersEvent,
+  SpotStateEvent,
+} from "@nktkas/hyperliquid/api/subscription";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
-import { buildMarkets, marketByCoin, usdcTokenId } from "@/lib/markets";
+import { buildMarkets, marketByCoin, usdcTokenId, withLiveCtx, type Market } from "@/lib/markets";
 import { CCTP_CONFIG, fetchFeeQuote } from "@/lib/cctp";
 import { arbitrumBalances } from "@/lib/cctpClient";
 import { loadFavorites, toggleStoredFavorite } from "@/lib/favorites";
 import { loadPrefs } from "@/lib/prefs";
 import { fetchDepositAddress, type UnitAsset } from "@/lib/unit";
+import { useLiveFeed } from "./live";
 import { useUnlocked } from "./session";
 
+// Polling intervals. Every REST call shares Hyperliquid's 1200/min weight
+// budget per IP with order submission (rate-limit docs: weight 2 for
+// clearinghouseState/spotClearinghouseState/l2Book, 20 for most others), so
+// live data comes from websocket feeds (hooks/live.ts) and a query whose feed
+// is confirmed only polls every FEED_FALLBACK_MS as a safety net.
 const LIVE_MS = 5_000;
-const MARKETS_MS = 10_000;
+const ORDERS_MS = 15_000;
+const MARKETS_MS = 30_000;
 const HISTORY_MS = 30_000;
+const FEED_FALLBACK_MS = 60_000;
 const DAY_MS = 86_400_000;
 
 export function useMarketData(network: Network) {
@@ -28,23 +46,56 @@ export function useMarketData(network: Network) {
   });
 }
 
-function useAccountQuery<T>(name: string, fetch: (network: Network, user: `0x${string}`) => Promise<T>, interval: number) {
+type MarketData = NonNullable<ReturnType<typeof useMarketData>["data"]>;
+
+// Live prices for the market being traded, between full market refreshes.
+export function useLiveMarketCtx(network: Network, market: Market) {
+  useLiveFeed<ActiveAssetCtxEvent | ActiveSpotAssetCtxEvent, MarketData>(
+    network,
+    ["markets", network],
+    (c, l, o) => (market.kind === "perp" ? c.activeAssetCtx({ coin: market.coin }, l, o) : c.activeSpotAssetCtx({ coin: market.coin }, l, o)),
+    (e, prev) => (prev && e.coin === market.coin ? withLiveCtx(prev, e.coin, e.ctx) : prev),
+    `ctx:${market.coin}`,
+  );
+}
+
+interface Feed<E, T> {
+  subscribe: (client: SubscriptionClient, user: `0x${string}`, listener: (event: E) => void, options: { onError: () => void }) => Promise<ISubscription>;
+  // undefined: the event does not apply (another dex); keep the cached value.
+  apply: (event: E) => T | undefined;
+}
+
+function useAccountQuery<T, E = never>(name: string, fetch: (network: Network, user: `0x${string}`) => Promise<T>, interval: number, feed?: Feed<E, T>) {
   const { config } = useUnlocked();
+  const queryKey = [name, config.network, config.address];
+  const live = useLiveFeed<E, T>(config.network, queryKey, feed ? (c, l, o) => feed.subscribe(c, config.address, l, o) : null, (e, prev) =>
+    feed ? (feed.apply(e) ?? prev) : prev,
+  );
   return useQuery({
-    queryKey: [name, config.network, config.address],
+    queryKey,
     queryFn: () => fetch(config.network, config.address),
-    refetchInterval: interval,
+    refetchInterval: live ? FEED_FALLBACK_MS : interval,
   });
 }
 
+// Feeds without a dex parameter carry the main dex (dex ""), which includes spot.
 export const usePerpState = () =>
-  useAccountQuery("perpState", (n, user) => infoClient(n).clearinghouseState({ user }), LIVE_MS);
+  useAccountQuery("perpState", (n, user) => infoClient(n).clearinghouseState({ user }), LIVE_MS, {
+    subscribe: (c, user, l, o) => c.clearinghouseState({ user }, l, o),
+    apply: (e: ClearinghouseStateEvent) => (e.dex === "" ? e.clearinghouseState : undefined),
+  });
 
 export const useSpotState = () =>
-  useAccountQuery("spotState", (n, user) => infoClient(n).spotClearinghouseState({ user }), LIVE_MS);
+  useAccountQuery("spotState", (n, user) => infoClient(n).spotClearinghouseState({ user }), LIVE_MS, {
+    subscribe: (c, user, l, o) => c.spotState({ user }, l, o),
+    apply: (e: SpotStateEvent) => e.spotState,
+  });
 
 export const useOpenOrders = () =>
-  useAccountQuery("openOrders", (n, user) => infoClient(n).frontendOpenOrders({ user }), LIVE_MS);
+  useAccountQuery("openOrders", (n, user) => infoClient(n).frontendOpenOrders({ user }), ORDERS_MS, {
+    subscribe: (c, user, l, o) => c.openOrders({ user }, l, o),
+    apply: (e: OpenOrdersEvent) => (e.dex === "" ? e.orders : undefined),
+  });
 
 // At most the 2000 most recent orders (Hyperliquid info endpoint docs).
 export const useOrderHistory = () =>
@@ -74,24 +125,32 @@ export const useLedger = () =>
 // Perps only. Leverage and max trade size per side for one coin.
 export function useActiveAsset(coin: string | null) {
   const { config } = useUnlocked();
+  const queryKey = ["activeAsset", config.network, config.address, coin];
+  const live = useLiveFeed<ActiveAssetDataEvent, ActiveAssetDataEvent>(
+    config.network,
+    queryKey,
+    coin === null ? null : (c, l, o) => c.activeAssetData({ user: config.address, coin }, l, o),
+    (e) => e,
+  );
   return useQuery({
-    queryKey: ["activeAsset", config.network, config.address, coin],
+    queryKey,
     queryFn: () => infoClient(config.network).activeAssetData({ user: config.address, coin: coin! }),
     enabled: coin !== null,
-    refetchInterval: LIVE_MS,
+    refetchInterval: live ? FEED_FALLBACK_MS : ORDERS_MS,
   });
 }
 
+function bookTop(book: { levels: [{ px: string }[], { px: string }[]] } | null) {
+  return { bid: Number(book?.levels[0][0]?.px ?? 0), ask: Number(book?.levels[1][0]?.px ?? 0) };
+}
+
 export function useBook(network: Network, coin: string) {
+  const queryKey = ["book", network, coin];
+  const live = useLiveFeed<L2BookEvent, ReturnType<typeof bookTop>>(network, queryKey, (c, l, o) => c.l2Book({ coin }, l, o), (e) => bookTop(e));
   return useQuery({
-    queryKey: ["book", network, coin],
-    queryFn: async () => {
-      const book = await infoClient(network).l2Book({ coin });
-      const bid = Number(book?.levels[0][0]?.px ?? 0);
-      const ask = Number(book?.levels[1][0]?.px ?? 0);
-      return { bid, ask };
-    },
-    refetchInterval: 3_000,
+    queryKey,
+    queryFn: async () => bookTop(await infoClient(network).l2Book({ coin })),
+    refetchInterval: live ? FEED_FALLBACK_MS : 3_000,
   });
 }
 
@@ -110,7 +169,8 @@ export const useActiveTwaps = () =>
       }
       return [...latest.values()].filter((r) => r.status.status === "activated" || r.status.status === "waitingForTrigger");
     },
-    LIVE_MS,
+    // Weight 20 plus more per 20 rows of history; TWAPs change slowly.
+    HISTORY_MS,
   );
 
 export function useFavorites(network: Network) {
