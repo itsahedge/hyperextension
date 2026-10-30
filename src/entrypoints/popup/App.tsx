@@ -4,7 +4,6 @@ import { Badge, Button, cx } from "@/components/ui";
 import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
 import { useVpnState } from "@/hooks/vpn";
-import { shortAddress } from "@/lib/format";
 import { lock } from "@/lib/session";
 import { Activity } from "@/screens/Activity";
 import { Orders } from "@/screens/Orders";
@@ -114,10 +113,9 @@ function Shell() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
-        <span className="font-mono text-xs" title={config.address}>
-          {shortAddress(config.address)}
-        </span>
-        <Badge tone={config.mode === "agent" ? "accent" : "neutral"}>{config.mode === "agent" ? "API wallet" : "Master"}</Badge>
+        <Badge tone={config.mode === "agent" ? "accent" : "neutral"} title={config.address}>
+          {config.mode === "agent" ? "API wallet" : "Master"}
+        </Badge>
         {config.network === "testnet" && <Badge tone="warn">Testnet</Badge>}
         <VpnBadge />
         <RefreshButton />
@@ -154,5 +152,21 @@ function Shell() {
 function VpnBadge() {
   const vpn = useVpnState();
   if (!vpn.data?.enabled) return null;
-  return vpn.data.connected ? <Badge tone="up">VPN</Badge> : <Badge tone="down">VPN down</Badge>;
+  if (!vpn.data.connected) return <Badge tone="down">VPN down</Badge>;
+  // The IVPN server picked in Settings, as IVPN names it. Only for the .conf's
+  // own server, fall back to ipinfo's geolocation of the exit IP, which can
+  // differ (Holon, Tel Aviv vs Petah_Tiqva) and uses underscores.
+  const { exit, location } = vpn.data;
+  const where = location
+    ? `${location.city}, ${location.countryCode}`
+    : exit
+      ? [exit.city?.replaceAll("_", " "), exit.country].filter(Boolean).join(", ")
+      : "";
+  const label = where ? `VPN · ${where}` : "VPN";
+  // Shrinks with an ellipsis when the header is crowded (e.g. testnet); full text on hover.
+  return (
+    <Badge tone="up" className="min-w-0 truncate" title={`${label}${exit ? ` (${exit.ip})` : ""}`}>
+      {label}
+    </Badge>
+  );
 }
