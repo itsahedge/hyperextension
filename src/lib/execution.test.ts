@@ -3,7 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { Market } from "./markets";
 import { describeSummary, submitOrders, summarizeStatuses } from "./placement";
-import { planSwarm } from "./swarm";
+import { groupBySwarm, parseSwarmCloid, planSwarm, swarmCloid } from "./swarm";
 import { buildTrigger, triggerKind, withTpSl } from "./trigger";
 import { buildTwap, TWAP_MAX_MINUTES } from "./twap";
 
@@ -55,10 +55,63 @@ describe("planSwarm", () => {
     expect(sizes.every((s) => /^\d+(\.\d{1,4})?$/.test(s))).toBe(true);
   });
 
+  it("tags every lot with one swarm id, its lot number, and the lot count", () => {
+    const { orders } = planSwarm({ market: eth, isBuy: true, size: 1, lots: 4, irregular: false, slippage: 0.01, reduceOnly: false, swarmId: "00112233445566ff" });
+    expect(orders.map((o) => o.c)).toEqual([
+      "0x5357524d00112233445566ff00010004",
+      "0x5357524d00112233445566ff00020004",
+      "0x5357524d00112233445566ff00030004",
+      "0x5357524d00112233445566ff00040004",
+    ]);
+    const random = planSwarm({ market: eth, isBuy: true, size: 1, lots: 2, irregular: false, slippage: 0.01, reduceOnly: false });
+    expect(random.orders.every((o) => /^0x5357524d[0-9a-f]{24}$/.test(o.c ?? ""))).toBe(true);
+    expect(parseSwarmCloid(random.orders[0]!.c)?.id).toBe(parseSwarmCloid(random.orders[1]!.c)?.id);
+  });
+
   it("enforces lot count and the $10 per-lot minimum", () => {
     const base = { market: eth, isBuy: true, irregular: false, slippage: 0.01, reduceOnly: false };
     expect(() => planSwarm({ ...base, size: 1, lots: 1 })).toThrow(/2 to 50/);
     expect(() => planSwarm({ ...base, size: 0.01, lots: 5 })).toThrow(/at least \$10/);
+  });
+});
+
+describe("swarm cloids", () => {
+  it("round-trips and rejects anything that is not a swarm tag", () => {
+    expect(parseSwarmCloid(swarmCloid("abcdef0123456789", 3, 20))).toEqual({ id: "abcdef0123456789", lot: 3, lots: 20 });
+    expect(parseSwarmCloid("0x97baa1b39a14559d05c51dfbfd4fa653")).toBeNull();
+    expect(parseSwarmCloid(null)).toBeNull();
+    expect(parseSwarmCloid(undefined)).toBeNull();
+    expect(parseSwarmCloid("0x5357524d00")).toBeNull();
+    expect(() => swarmCloid("xyz", 1, 2)).toThrow();
+  });
+});
+
+describe("groupBySwarm", () => {
+  const tag = (lot: number) => swarmCloid("00000000000000aa", lot, 3);
+  const rows = [
+    { id: "a", cloid: tag(3) },
+    { id: "plain1", cloid: null },
+    { id: "b", cloid: tag(1) },
+    { id: "c", cloid: tag(2) },
+    { id: "c2", cloid: tag(2) }, // a lot with a second fill
+    { id: "other", cloid: "0x97baa1b39a14559d05c51dfbfd4fa653" },
+  ];
+
+  it("collapses a swarm's rows into one item at its first position, lots in order", () => {
+    const items = groupBySwarm(rows, (r) => r.cloid);
+    expect(items.map((i) => (i.kind === "row" ? i.row.id : `swarm:${i.lots.map((l) => `${l.lot}=${l.rows.map((r) => r.id).join("+")}`).join(",")}`))).toEqual([
+      "swarm:1=b,2=c+c2,3=a",
+      "plain1",
+      "other",
+    ]);
+    const swarm = items[0]!;
+    if (swarm.kind !== "swarm") throw new Error("expected a swarm");
+    expect(swarm).toMatchObject({ id: "00000000000000aa", lotCount: 3 });
+  });
+
+  it("leaves a lone tagged row as a swarm of one so its label still shows", () => {
+    const items = groupBySwarm([{ cloid: tag(2) }], (r) => r.cloid);
+    expect(items[0]).toMatchObject({ kind: "swarm", lotCount: 3 });
   });
 });
 
