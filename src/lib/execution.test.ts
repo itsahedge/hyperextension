@@ -108,12 +108,17 @@ describe("buildTwap", () => {
     });
   });
 
-  it("enforces duration, $100 minimum, and perps only", () => {
+  it("builds a spot TWAP with the spot asset id and no reduce-only", () => {
+    expect(buildTwap({ market: spot, isBuy: false, size: "1", minutes: 60, randomize: false, reduceOnly: true })).toEqual({
+      twap: { a: 10_107, b: false, s: "1", r: false, m: 60, t: false },
+    });
+  });
+
+  it("enforces duration and the $100 minimum", () => {
     const base = { market: eth, isBuy: true, size: "1", randomize: false, reduceOnly: false };
     expect(() => buildTwap({ ...base, minutes: 4 })).toThrow(/5 to 1440/);
     expect(() => buildTwap({ ...base, minutes: TWAP_MAX_MINUTES + 1 })).toThrow(/5 to 1440/);
     expect(() => buildTwap({ ...base, minutes: 10, size: "0.01" })).toThrow(/\$100/);
-    expect(() => buildTwap({ ...base, market: spot, minutes: 10 })).toThrow(/perps only/);
   });
 });
 

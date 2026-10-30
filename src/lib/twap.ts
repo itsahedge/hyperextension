@@ -18,11 +18,11 @@ export interface TwapInput {
   reduceOnly: boolean;
 }
 
-// Hyperliquid runs the TWAP server-side; it keeps executing after the popup
-// closes. Suborders have a 3% max slippage set by the exchange.
+// Hyperliquid runs the TWAP server-side, on perps and spot alike (twapOrder
+// takes any asset id); it keeps executing after the popup closes.
+// Suborders have a 3% max slippage set by the exchange.
 export function buildTwap(input: TwapInput): TwapOrderParameters {
   const { market, minutes } = input;
-  if (market.kind !== "perp") throw new Error("TWAP is available on perps only");
   if (!Number.isInteger(minutes) || minutes < TWAP_MIN_MINUTES || minutes > TWAP_MAX_MINUTES) {
     throw new Error(`Duration must be ${TWAP_MIN_MINUTES} to ${TWAP_MAX_MINUTES} minutes`);
   }
@@ -31,6 +31,6 @@ export function buildTwap(input: TwapInput): TwapOrderParameters {
   const reference = market.midPx ?? market.markPx;
   if (size * reference < TWAP_MIN_USD) throw new Error(`TWAP total must be at least $${TWAP_MIN_USD}`);
   return {
-    twap: { a: market.assetId, b: input.isBuy, s: input.size, r: input.reduceOnly, m: minutes, t: input.randomize },
+    twap: { a: market.assetId, b: input.isBuy, s: input.size, r: market.kind === "perp" && input.reduceOnly, m: minutes, t: input.randomize },
   };
 }
