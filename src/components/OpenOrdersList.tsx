@@ -7,6 +7,7 @@ import {
   filterByCoin,
   filterOrders,
   groupByCoin,
+  headerCancelLabel,
   scopeLabel,
   type KindFilter,
   type OpenOrder,
@@ -52,10 +53,6 @@ export function OpenOrdersList({ byCoin, coin }: { byCoin: Map<string, Market>; 
     else setConfirming(sc);
   };
   const filtered = side !== "all" || kind !== "all";
-  // A filter is only offered when it can split the list, or is already set.
-  const has = (f: Partial<{ side: SideFilter; kind: KindFilter }>) => filterOrders(inMarket, { coin: null, side: "all", kind: "all", ...f }).length > 0;
-  const showSide = side !== "all" || (has({ side: "buy" }) && has({ side: "sell" }));
-  const showKind = kind !== "all" || (has({ kind: "limit" }) && has({ kind: "trigger" }));
   const bulk = rows.length > 1 ? scope(rows, marketName) : null;
 
   return (
@@ -71,7 +68,7 @@ export function OpenOrdersList({ byCoin, coin }: { byCoin: Map<string, Market>; 
             aria-label={bulk.label}
             onClick={() => request(bulk)}
           >
-            {filtered ? `Cancel ${rows.length}` : "Cancel all"}
+            {filtered ? headerCancelLabel(rows.length, side, kind) : "Cancel all"}
           </Button>
         )
       }
@@ -84,23 +81,19 @@ export function OpenOrdersList({ byCoin, coin }: { byCoin: Map<string, Market>; 
         <Empty>No open orders{marketName ? ` for ${marketName}` : ""}</Empty>
       ) : (
         <div className="flex flex-col gap-2">
-          {(showSide || showKind) && (
-            <div role="group" aria-label="Filter orders" className="flex flex-wrap items-center gap-1.5">
-              {showSide &&
-                (["buy", "sell"] as const).map((v) => (
-                  <FilterChip key={v} on={side === v} count={count({ side: v })} onToggle={() => setSide(side === v ? "all" : v)}>
-                    {v === "buy" ? "Buy" : "Sell"}
-                  </FilterChip>
-                ))}
-              {showSide && showKind && <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
-              {showKind &&
-                (["limit", "trigger"] as const).map((v) => (
-                  <FilterChip key={v} on={kind === v} count={count({ kind: v })} onToggle={() => setKind(kind === v ? "all" : v)}>
-                    {v === "limit" ? "Limit" : "Trigger"}
-                  </FilterChip>
-                ))}
-            </div>
-          )}
+          <div role="group" aria-label="Filter orders" className="flex flex-wrap items-center gap-1.5">
+            {(["buy", "sell"] as const).map((v) => (
+              <FilterChip key={v} on={side === v} count={count({ side: v })} onToggle={() => setSide(side === v ? "all" : v)}>
+                {v === "buy" ? "Buy" : "Sell"}
+              </FilterChip>
+            ))}
+            <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />
+            {(["limit", "trigger"] as const).map((v) => (
+              <FilterChip key={v} on={kind === v} count={count({ kind: v })} onToggle={() => setKind(kind === v ? "all" : v)}>
+                {v === "limit" ? "Limit" : "Trigger"}
+              </FilterChip>
+            ))}
+          </div>
           {rows.length === 0 ? (
             <div className="flex flex-col items-center">
               <Empty>No orders match these filters</Empty>
@@ -263,10 +256,11 @@ function FilterChip({ on, count, onToggle, children }: { on: boolean; count: num
   return (
     <HButton
       aria-pressed={on}
+      disabled={count === 0 && !on}
       onClick={onToggle}
       className={cx(
         "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-[color,border-color,background-color] duration-150",
-        "data-focus:outline-2 data-focus:outline-offset-2 data-focus:outline-accent data-active:scale-[0.96]",
+        "data-focus:outline-2 data-focus:outline-offset-2 data-focus:outline-accent data-active:scale-[0.96] data-disabled:cursor-not-allowed data-disabled:opacity-40",
         on ? "border-accent bg-accent/10 text-accent" : "border-line text-muted data-hover:text-fg",
       )}
     >

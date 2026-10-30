@@ -52,6 +52,16 @@ export function scopeLabel(count: number, f: Omit<OrderFilter, "coin">, marketNa
   return `Cancel ${count} ${side}${kind}${noun}${where}`;
 }
 
+// Short header label naming what a filtered bulk cancel hits:
+// "Cancel 29 buys", "Cancel 5 sell triggers", "Cancel 12 limits".
+export function headerCancelLabel(count: number, side: SideFilter, kind: KindFilter): string {
+  const sideWord = side === "all" ? "" : side;
+  const kindWord = kind === "all" ? "" : kind;
+  const words = [sideWord, kindWord].filter(Boolean);
+  if (count !== 1) words[words.length - 1] += "s";
+  return `Cancel ${count} ${words.join(" ")}`;
+}
+
 export function filterByCoin<T extends { coin: string }>(rows: T[], coin: string | null): T[] {
   return coin === null ? rows : rows.filter((r) => r.coin === coin);
 }
