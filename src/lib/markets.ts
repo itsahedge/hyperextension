@@ -1,11 +1,26 @@
-import type { MetaAndAssetCtxsResponse, SpotMetaAndAssetCtxsResponse } from "@nktkas/hyperliquid/api/info";
+import type { AllPerpMetasResponse, MetaAndAssetCtxsResponse, SpotMetaAndAssetCtxsResponse } from "@nktkas/hyperliquid/api/info";
 
 export type MarketKind = "perp" | "spot";
 
+export type MarginMode = "normal" | "noCross" | "strictIsolated";
+
 export interface Market {
   kind: MarketKind;
-  // Display name: "BTC" for perps, "HYPE/USDC" for spot.
+  // Symbol: "BTC" or "TSLA" for perps, "HYPE/USDC" for spot.
   name: string;
+  // What lists show: the name, plus the dex for HIP-3 perps, whose symbols
+  // repeat across dexs ("TSLA (xyz)", "TSLA (flx)").
+  label: string;
+  // Perp dex name; "" for the first (validator-operated) dex and for spot.
+  dex: string;
+  // Collateral token for perps (USDC, or USDH/USDE/USDT0 on some HIP-3 dexs);
+  // the quote token for spot.
+  collateral: string;
+  // Perps: "noCross" allows only isolated margin, "strictIsolated" also keeps
+  // margin from being removed. Null for spot.
+  marginMode: MarginMode | null;
+  // HIP-3 growth mode: fees reduced by >=90% (trade[XYZ] fee docs).
+  growthMode: boolean;
   // Key the API uses in positions, open orders, and fills: the perp name, or
   // the spot universe name ("@107", or "PURR/USDC" for legacy pairs).
   coin: string;
@@ -22,29 +37,76 @@ export interface Market {
   openInterest: number | null;
 }
 
-// Spot asset ids are 10000 + the pair's universe index (Hyperliquid "Asset IDs" docs).
+// Hyperliquid "Asset IDs" docs: spot is 10000 + the pair's universe index;
+// builder-deployed (HIP-3) perps are 100000 + perp_dex_index * 10000 +
+// index_in_meta, named "{dex}:{coin}".
 const SPOT_ASSET_OFFSET = 10_000;
+const HIP3_ASSET_OFFSET = 100_000;
+const HIP3_DEX_STRIDE = 10_000;
+
+export type PerpCtx = MetaAndAssetCtxsResponse[1][number];
+type PerpAsset = AllPerpMetasResponse[number]["universe"][number];
+
+// HIP-3 dexs: allPerpMetas (index = perp dex index, 0 = main) and the price
+// contexts per dex name, from the allDexsAssetCtxs feed or metaAndAssetCtxs.
+export interface Hip3Input {
+  metas: AllPerpMetasResponse;
+  ctxs: Map<string, PerpCtx[]>;
+}
+
+function marginModeOf(asset: PerpAsset): MarginMode {
+  const mode = (asset as { marginMode?: string }).marginMode;
+  if (mode === "noCross" || mode === "strictIsolated") return mode;
+  // onlyIsolated is deprecated and means strictIsolated or noCross.
+  return asset.onlyIsolated ? "noCross" : "normal";
+}
+
+function perpMarket(asset: PerpAsset, ctx: PerpCtx, assetId: number, dex: string, collateral: string): Market {
+  const name = dex ? asset.name.slice(dex.length + 1) : asset.name;
+  return {
+    kind: "perp",
+    name,
+    label: dex ? `${name} (${dex})` : name,
+    dex,
+    collateral,
+    marginMode: marginModeOf(asset),
+    growthMode: (asset as { growthMode?: string }).growthMode === "enabled",
+    coin: asset.name,
+    assetId,
+    szDecimals: asset.szDecimals,
+    maxLeverage: asset.maxLeverage,
+    ...priceFields("perp", ctx),
+  };
+}
 
 export function buildMarkets(
   [perpMeta, perpCtxs]: MetaAndAssetCtxsResponse,
   [spotMeta, spotCtxs]: SpotMetaAndAssetCtxsResponse,
+  hip3?: Hip3Input,
 ): Market[] {
+  const tokens = new Map(spotMeta.tokens.map((t) => [t.index, t]));
+  const tokenName = (index: number) => tokens.get(index)?.name ?? `token ${index}`;
+
   const perps: Market[] = [];
   perpMeta.universe.forEach((asset, index) => {
     const ctx = perpCtxs[index];
     if (!ctx || asset.isDelisted) return;
-    perps.push({
-      kind: "perp",
-      name: asset.name,
-      coin: asset.name,
-      assetId: index,
-      szDecimals: asset.szDecimals,
-      maxLeverage: asset.maxLeverage,
-      ...priceFields("perp", ctx),
+    perps.push(perpMarket(asset, ctx, index, "", tokenName(perpMeta.collateralToken)));
+  });
+
+  hip3?.metas.forEach((meta, dexIndex) => {
+    if (dexIndex === 0) return;
+    const first = meta.universe[0]?.name ?? "";
+    const dex = first.slice(0, first.indexOf(":"));
+    const ctxs = dex ? hip3.ctxs.get(dex) : undefined;
+    if (!ctxs) return;
+    meta.universe.forEach((asset, index) => {
+      const ctx = ctxs[index];
+      if (!ctx || asset.isDelisted) return;
+      perps.push(perpMarket(asset, ctx, HIP3_ASSET_OFFSET + dexIndex * HIP3_DEX_STRIDE + index, dex, tokenName(meta.collateralToken)));
     });
   });
 
-  const tokens = new Map(spotMeta.tokens.map((t) => [t.index, t]));
   const spotCtxByCoin = new Map(spotCtxs.map((c) => [c.coin, c]));
   const spots: Market[] = [];
   for (const pair of spotMeta.universe) {
@@ -52,9 +114,15 @@ export function buildMarkets(
     const quote = tokens.get(pair.tokens[1]);
     const ctx = spotCtxByCoin.get(pair.name);
     if (!base || !quote || !ctx) continue;
+    const name = `${base.name}/${quote.name}`;
     spots.push({
       kind: "spot",
-      name: `${base.name}/${quote.name}`,
+      name,
+      label: name,
+      dex: "",
+      collateral: quote.name,
+      marginMode: null,
+      growthMode: false,
       coin: pair.name,
       assetId: SPOT_ASSET_OFFSET + pair.index,
       szDecimals: base.szDecimals,
@@ -98,6 +166,39 @@ export function withLiveCtx<T extends { markets: Market[]; byCoin: Map<string, M
   const byCoin = new Map(data.byCoin);
   byCoin.set(coin, next);
   return { ...data, markets: data.markets.map((m) => (m.coin === coin ? next : m)), byCoin };
+}
+
+// What the markets query holds: the raw definitions (kept so each price feed
+// event can rebuild every market) and the latest HIP-3 contexts per dex.
+export interface RawMarkets {
+  perp: MetaAndAssetCtxsResponse;
+  spot: SpotMetaAndAssetCtxsResponse;
+  metas: AllPerpMetasResponse;
+}
+
+export interface MarketData {
+  markets: Market[];
+  byCoin: Map<string, Market>;
+  usdcToken: string;
+  raw: RawMarkets;
+  hip3Ctxs: Map<string, PerpCtx[]>;
+}
+
+export function marketData(raw: RawMarkets, hip3Ctxs: Map<string, PerpCtx[]>): MarketData {
+  const markets = buildMarkets(raw.perp, raw.spot, { metas: raw.metas, ctxs: hip3Ctxs });
+  return { markets, byCoin: marketByCoin(markets), usdcToken: usdcTokenId(raw.spot[0]), raw, hip3Ctxs };
+}
+
+// Applies an allDexsAssetCtxs event: [dex, contexts] for every perp dex, ""
+// being the main dex. Dexs missing from the event keep their last contexts.
+export function withDexCtxs(data: MarketData, entries: [string, PerpCtx[]][]): MarketData {
+  const hip3Ctxs = new Map(data.hip3Ctxs);
+  let perp = data.raw.perp;
+  for (const [dex, ctxs] of entries) {
+    if (dex === "") perp = [perp[0], ctxs];
+    else hip3Ctxs.set(dex, ctxs);
+  }
+  return marketData({ ...data.raw, perp }, hip3Ctxs);
 }
 
 // Token identifier for sendAsset-style actions: "NAME:0x<tokenId>".

@@ -120,7 +120,7 @@ export function OrderPanel({
       return;
     }
     setLastError(null);
-    const marketName = market.name;
+    const marketName = market.label;
     submit.mutate(attempt.plan, {
       onSuccess: (out) => {
         toast(

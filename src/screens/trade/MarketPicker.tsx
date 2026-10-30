@@ -36,8 +36,9 @@ export function StarButton({ on, onToggle, label, className }: { on: boolean; on
 function MarketRow({ m, favorite, onToggle }: { m: Market; favorite: boolean; onToggle: () => void }) {
   return (
     <ComboboxOption value={m} className="flex cursor-pointer items-center gap-1.5 rounded py-1 pr-2 pl-0.5 text-xs data-focus:bg-line">
-      <StarButton on={favorite} onToggle={onToggle} label={m.name} />
+      <StarButton on={favorite} onToggle={onToggle} label={m.label} />
       <span className="font-medium">{m.name}</span>
+      {m.dex && <span className="rounded bg-raised px-1 text-[10px] text-muted">{m.dex}</span>}
       <span className="ml-auto tabular-nums">{fmtPrice(m.markPx)}</span>
       <span className={cx("w-14 text-right tabular-nums", toneOf(m.markPx - m.prevDayPx))}>
         {m.prevDayPx ? fmtPct(m.markPx / m.prevDayPx - 1) : "-"}
@@ -62,7 +63,7 @@ export function MarketPicker({
   const [query, setQuery] = useState("");
   const groups = useMemo(() => {
     const q = query.trim().toUpperCase();
-    const matching = q ? markets.filter((m) => m.name.toUpperCase().includes(q)) : markets;
+    const matching = q ? markets.filter((m) => m.label.toUpperCase().includes(q) || m.coin.toUpperCase().includes(q)) : markets;
     const { favorites: favs, rest } = withFavoritesFirst(matching, favorites);
     return { favs, rest: rest.slice(0, 50) };
   }, [markets, query, favorites]);
@@ -74,11 +75,11 @@ export function MarketPicker({
         <ComboboxInput
           aria-label="Market"
           className="h-9 w-full rounded-md border border-line bg-surface pr-14 pl-2.5 font-semibold outline-none focus:border-accent"
-          displayValue={(m: Market | null) => m?.name ?? ""}
+          displayValue={(m: Market | null) => m?.label ?? ""}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={(e) => e.currentTarget.select()}
         />
-        <StarButton on={isFav(value.coin)} onToggle={() => onToggleFavorite(value.coin)} label={value.name} className="absolute top-1.5 right-8" />
+        <StarButton on={isFav(value.coin)} onToggle={() => onToggleFavorite(value.coin)} label={value.label} className="absolute top-1.5 right-8" />
         <ComboboxButton aria-label="Show markets" className="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted hover:text-fg">
           <svg aria-hidden viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.75">
             <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
@@ -125,7 +126,7 @@ export function FavoriteChips({ markets, value, onChange }: { markets: Market[];
             m.coin === value.coin ? "border-accent text-accent" : "border-line text-muted hover:text-fg",
           )}
         >
-          {m.name}
+          {m.label}
         </button>
       ))}
     </div>

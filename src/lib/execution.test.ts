@@ -10,6 +10,11 @@ import { buildTwap, TWAP_MAX_MINUTES } from "./twap";
 const eth: Market = {
   kind: "perp",
   name: "ETH",
+  label: "ETH",
+  dex: "",
+  collateral: "USDC",
+  marginMode: "normal",
+  growthMode: false,
   coin: "ETH",
   assetId: 1,
   szDecimals: 4,

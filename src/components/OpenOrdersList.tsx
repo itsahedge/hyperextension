@@ -30,7 +30,7 @@ export function OpenOrdersList({ byCoin, coin }: { byCoin: Map<string, Market>; 
   const [confirming, setConfirming] = useState<Scope | null>(null);
   const cancel = useExchange((client, targets: { a: number; o: number }[]) => cancelOrders(client, targets));
 
-  const name = (c: string) => byCoin.get(c)?.name ?? c;
+  const name = (c: string) => byCoin.get(c)?.label ?? c;
   const marketName = coin === null ? null : name(coin);
   const inMarket = filterByCoin(orders.data ?? [], coin);
   const rows = filterOrders(inMarket, { coin: null, side, kind });
@@ -208,7 +208,7 @@ function OrderRow({
       <Badge tone={isBuy ? "up" : "down"}>{isBuy ? "Buy" : "Sell"}</Badge>
       <div className="flex min-w-0 flex-col">
         <span className="font-medium">
-          {showMarket && `${market?.name ?? o.coin} `}
+          {showMarket && `${market?.label ?? o.coin} `}
           <span className={showMarket ? "text-muted" : ""}>{o.orderType}</span>
           {/* Position TP/SL are always reduce-only; say it once. */}
           {o.isPositionTpsl ? <span className="text-muted"> · position TP/SL</span> : o.reduceOnly && <span className="text-muted"> · reduce</span>}

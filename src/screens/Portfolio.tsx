@@ -73,7 +73,7 @@ function PositionRow({ position: p, market }: { position: Position; market: Mark
   return (
     <li className="flex flex-col gap-2 py-2.5 first:pt-0 last:pb-0">
       <div className="flex items-center gap-2">
-        <span className="font-semibold">{p.coin}</span>
+        <span className="font-semibold">{market?.label ?? p.coin}</span>
         <Badge tone={isLong ? "up" : "down"}>
           {isLong ? "Long" : "Short"} {p.leverage.value}x {p.leverage.type === "isolated" ? "iso" : ""}
         </Badge>
@@ -97,12 +97,12 @@ function PositionRow({ position: p, market }: { position: Position; market: Mark
         <ConfirmDialog
           open={confirming}
           onClose={() => setConfirming(false)}
-          title={`Close ${p.coin} position`}
+          title={`Close ${market?.label ?? p.coin} position`}
           confirmLabel="Close position"
           variant="danger"
           onConfirm={() => close.mutateAsync(market)}
         >
-          Sends a reduce-only market {isLong ? "sell" : "buy"} for {fmtSize(Math.abs(Number(p.szi)))} {p.coin}, at most{" "}
+          Sends a reduce-only market {isLong ? "sell" : "buy"} for {fmtSize(Math.abs(Number(p.szi)))} {market?.name ?? p.coin}, at most{" "}
           {DEFAULT_SLIPPAGE * 100}% from the mid price. Any unfilled part is cancelled.
         </ConfirmDialog>
       )}

@@ -16,7 +16,7 @@ export function MarketFilter({
   counts: Map<string, number>;
   byCoin: Map<string, Market>;
 }) {
-  const name = (coin: string) => byCoin.get(coin)?.name ?? coin;
+  const name = (coin: string) => byCoin.get(coin)?.label ?? coin;
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
   const options: { coin: string | null; label: string; count: number }[] = [
     { coin: null, label: "All markets", count: total },

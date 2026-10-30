@@ -5,6 +5,11 @@ import { MAX_SCALE_ORDERS, planScale, scalePositions, scaleSideRange, scaleWeigh
 const eth: Market = {
   kind: "perp",
   name: "ETH",
+  label: "ETH",
+  dex: "",
+  collateral: "USDC",
+  marginMode: "normal",
+  growthMode: false,
   coin: "ETH",
   assetId: 1,
   szDecimals: 4,

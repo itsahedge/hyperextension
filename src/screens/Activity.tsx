@@ -83,7 +83,7 @@ function Fills() {
           key={`${f.tid}-${f.oid}`}
           left={
             <>
-              <Badge tone={f.side === "B" ? "up" : "down"}>{f.dir}</Badge> {markets.data?.byCoin.get(f.coin)?.name ?? f.coin}
+              <Badge tone={f.side === "B" ? "up" : "down"}>{f.dir}</Badge> {markets.data?.byCoin.get(f.coin)?.label ?? f.coin}
             </>
           }
           sub={fmtTime(f.time)}

@@ -3,17 +3,18 @@ import type {
   ActiveAssetCtxEvent,
   ActiveAssetDataEvent,
   ActiveSpotAssetCtxEvent,
+  AllDexsAssetCtxsEvent,
   ClearinghouseStateEvent,
   L2BookEvent,
   OpenOrdersEvent,
   SpotStateEvent,
 } from "@nktkas/hyperliquid/api/subscription";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Network } from "@/lib/account";
 import { exchangeClient, infoClient } from "@/lib/hyperliquid";
 import type { BookLevel } from "@/lib/liquidity";
-import { buildMarkets, marketByCoin, usdcTokenId, withLiveCtx, type Market } from "@/lib/markets";
+import { marketData, withDexCtxs, withLiveCtx, type Market, type MarketData, type PerpCtx, type RawMarkets } from "@/lib/markets";
 import { CCTP_CONFIG, fetchFeeQuote } from "@/lib/cctp";
 import { arbitrumBalances } from "@/lib/cctpClient";
 import { loadFavorites, toggleStoredFavorite } from "@/lib/favorites";
@@ -35,20 +36,65 @@ const HISTORY_MS = 30_000;
 const FEED_FALLBACK_MS = 60_000;
 const DAY_MS = 86_400_000;
 
-export function useMarketData(network: Network) {
-  return useQuery({
-    queryKey: ["markets", network],
-    queryFn: async () => {
-      const info = infoClient(network);
-      const [perp, spot] = await Promise.all([info.metaAndAssetCtxs(), info.spotMetaAndAssetCtxs()]);
-      const markets = buildMarkets(perp, spot);
-      return { markets, byCoin: marketByCoin(markets), usdcToken: usdcTokenId(spot[0]) };
-    },
-    refetchInterval: MARKETS_MS,
-  });
+// How long the all-dex price feed may take to confirm before HIP-3 prices
+// are fetched over REST instead (10 dexs x weight 20).
+const FEED_GRACE_MS = 4_000;
+
+// HIP-3 prices per dex over REST: only when the allDexsAssetCtxs feed is not up.
+async function fetchHip3Ctxs(network: Network, metas: RawMarkets["metas"]): Promise<Map<string, PerpCtx[]>> {
+  const dexs = metas.slice(1).map((m) => m.universe[0]?.name.split(":")[0] ?? "").filter(Boolean);
+  const info = infoClient(network);
+  const results = await Promise.all(dexs.map(async (dex) => [dex, (await info.metaAndAssetCtxs({ dex }))[1]] as const));
+  return new Map(results);
 }
 
-type MarketData = NonNullable<ReturnType<typeof useMarketData>["data"]>;
+// The latest allDexsAssetCtxs entries per network. The feed's first event can
+// arrive before the definitions load; the query function starts from it.
+const latestDexCtxs = new Map<Network, [string, PerpCtx[]][]>();
+
+// Every perp dex (main + HIP-3) and spot. Definitions come over REST; prices
+// for every perp dex stream from the allDexsAssetCtxs feed (~120 KB every few
+// seconds), which also keeps HIP-3 markets listed without per-dex requests.
+export function useMarketData(network: Network) {
+  const queryClient = useQueryClient();
+  const queryKey = ["markets", network];
+  const live = useLiveFeed<AllDexsAssetCtxsEvent, MarketData>(
+    network,
+    queryKey,
+    (c, l, o) => c.allDexsAssetCtxs(l, o),
+    (e, prev) => {
+      latestDexCtxs.set(network, e.ctxs);
+      return prev ? withDexCtxs(prev, e.ctxs) : prev;
+    },
+  );
+  const [restHip3, setRestHip3] = useState(false);
+  useEffect(() => {
+    if (live) {
+      setRestHip3(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setRestHip3(true);
+      void queryClient.invalidateQueries({ queryKey: ["markets", network] });
+    }, FEED_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [live, network, queryClient]);
+
+  return useQuery({
+    queryKey,
+    queryFn: async (): Promise<MarketData> => {
+      const info = infoClient(network);
+      const [perp, spot, metas] = await Promise.all([info.metaAndAssetCtxs(), info.spotMetaAndAssetCtxs(), info.allPerpMetas()]);
+      if (restHip3) return marketData({ perp, spot, metas }, await fetchHip3Ctxs(network, metas));
+      // HIP-3 prices come from the feed: start from its latest event so those
+      // markets are listed (main perps keep the fresh REST contexts).
+      const fromFeed = (latestDexCtxs.get(network) ?? []).filter(([dex]) => dex !== "");
+      const prev = queryClient.getQueryData<MarketData>(["markets", network]);
+      return withDexCtxs(marketData({ perp, spot, metas }, prev?.hip3Ctxs ?? new Map()), fromFeed);
+    },
+    refetchInterval: live ? 5 * 60_000 : MARKETS_MS,
+  });
+}
 
 // Live prices for the market being traded, between full market refreshes.
 export function useLiveMarketCtx(network: Network, market: Market) {
