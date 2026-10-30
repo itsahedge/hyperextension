@@ -175,7 +175,7 @@ export function OrderPanel({
         {s.type === "swarm" && <SwarmFields {...fields} />}
         {s.type === "twap" && <TwapFields {...fields} />}
 
-        <div className="flex gap-1 border-t border-line pt-2">
+        <div className="flex flex-wrap gap-1.5 border-t border-line pt-2">
           {POST_TYPES.includes(s.type) && (
             <Toggle on={s.post} onChange={(post) => set({ post })}>
               Post

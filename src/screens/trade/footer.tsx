@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, Modal, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
 import { useExchange } from "@/hooks/queries";
 import type { Market } from "@/lib/markets";
@@ -18,20 +18,38 @@ export function PanelFooter({
   const [editSlip, setEditSlip] = useState(false);
   const isPerp = market.kind === "perp";
   return (
-    <div className="flex items-center justify-between border-t border-line pt-2 text-[11px] font-medium tracking-wide text-muted uppercase">
+    <div className="flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">
       {isPerp ? (
-        <button type="button" onClick={() => setEditLev(true)} className="uppercase hover:text-fg" disabled={!leverage}>
-          {leverage ? `${leverage.type} · ${leverage.value}x` : "…"}
-        </button>
+        <SettingButton onClick={() => setEditLev(true)} disabled={!leverage}>
+          {leverage ? `${leverage.type === "cross" ? "Cross" : "Isolated"} ${leverage.value}x` : "…"}
+        </SettingButton>
       ) : (
         <span>Spot</span>
       )}
-      <button type="button" onClick={() => setEditSlip(true)} className="uppercase hover:text-fg">
-        Slip {+(slippage * 100).toFixed(2)}%
-      </button>
+      <SettingButton onClick={() => setEditSlip(true)}>
+        Slippage {+(slippage * 100).toFixed(2)}%
+      </SettingButton>
       {isPerp && leverage && <LeverageDialog open={editLev} onClose={() => setEditLev(false)} market={market} current={leverage} />}
       <SlippageDialog open={editSlip} onClose={() => setEditSlip(false)} current={slippage} />
     </div>
+  );
+}
+
+// A current setting that opens its editor.
+function SettingButton({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-haspopup="dialog"
+      className="inline-flex h-6 items-center gap-1 rounded-md border border-line px-2 font-medium text-fg transition-[border-color,background-color] duration-150 hover:border-faint hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+    >
+      {children}
+      <svg aria-hidden viewBox="0 0 16 16" className="size-3 text-muted" fill="none" stroke="currentColor" strokeWidth="1.75">
+        <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   );
 }
 
