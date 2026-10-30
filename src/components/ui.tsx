@@ -163,7 +163,7 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   );
 }
 
-export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "up" | "down" | "warn" | "accent" }) {
+export function Badge({ children, tone = "neutral", className, title }: { children: ReactNode; tone?: "neutral" | "up" | "down" | "warn" | "accent"; className?: string; title?: string }) {
   const tones = {
     neutral: "bg-raised text-muted",
     up: "bg-up/15 text-up",
@@ -171,7 +171,11 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
     warn: "bg-warn/15 text-warn",
     accent: "bg-accent/15 text-accent",
   };
-  return <span className={cx("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", tones[tone])}>{children}</span>;
+  return (
+    <span title={title} className={cx("rounded px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap uppercase", tones[tone], className)}>
+      {children}
+    </span>
+  );
 }
 
 export function Notice({ tone, children }: { tone: "error" | "success" | "warn" | "info"; children: ReactNode }) {
