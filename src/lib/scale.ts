@@ -3,9 +3,10 @@ import type { Market } from "./markets";
 import type { OrderSpec } from "./orders";
 import { floorSize, MIN_ORDER_USD } from "./sizing";
 
-// A batched order costs 1 + floor(n / 40) IP weight (Hyperliquid rate-limit
-// docs), so 50 rungs is a single weight-2 request.
-export const MAX_SCALE_ORDERS = 50;
+// Above MAX_BATCH_ORDERS (200) the ladder is sent as several signed batches
+// (placement.ts). Each order counts against the address request budget
+// (Hyperliquid rate-limit docs), and the default open-order cap is 1000.
+export const MAX_SCALE_ORDERS = 500;
 export const MIN_SCALE_ORDERS = 2;
 
 // Skews run from -1 to 1 along the price axis, low price -> high price,
