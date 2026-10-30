@@ -13,13 +13,15 @@ import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type Rea
 
 const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "buy" | "sell";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "quietDanger" | "buy" | "sell";
 
 const buttonStyles: Record<ButtonVariant, string> = {
   primary: "bg-accent text-accent-fg hover:brightness-110",
   secondary: "bg-raised text-fg hover:bg-line",
   ghost: "text-muted hover:text-fg hover:bg-raised",
   danger: "bg-down/15 text-down hover:bg-down/25",
+  // Destructive action that should not dominate its surface (card headers).
+  quietDanger: "text-down hover:bg-down/15",
   buy: "bg-up text-bg hover:brightness-110",
   sell: "bg-down text-bg hover:brightness-110",
 };

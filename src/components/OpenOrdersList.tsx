@@ -13,7 +13,9 @@ import {
   type SideFilter,
 } from "@/lib/orderList";
 import { cancelOrders, describeCancels, type CancelSummary } from "@/lib/placement";
-import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, Segmented, errorMessage } from "./ui";
+import { Button as HButton } from "@headlessui/react";
+import type { ReactNode } from "react";
+import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, cx, errorMessage } from "./ui";
 
 interface Scope {
   rows: OpenOrder[];
@@ -50,9 +52,30 @@ export function OpenOrdersList({ byCoin, coin }: { byCoin: Map<string, Market>; 
     else setConfirming(sc);
   };
   const filtered = side !== "all" || kind !== "all";
+  // A filter is only offered when it can split the list, or is already set.
+  const has = (f: Partial<{ side: SideFilter; kind: KindFilter }>) => filterOrders(inMarket, { coin: null, side: "all", kind: "all", ...f }).length > 0;
+  const showSide = side !== "all" || (has({ side: "buy" }) && has({ side: "sell" }));
+  const showKind = kind !== "all" || (has({ kind: "limit" }) && has({ kind: "trigger" }));
+  const bulk = rows.length > 1 ? scope(rows, marketName) : null;
 
   return (
-    <Card title={`Open orders${marketName ? ` · ${marketName}` : ""} (${filtered ? `${rows.length} of ${inMarket.length}` : rows.length})`}>
+    <Card
+      title={`Open orders${marketName ? ` · ${marketName}` : ""} (${filtered ? `${rows.length} of ${inMarket.length}` : rows.length})`}
+      action={
+        bulk && (
+          <Button
+            size="sm"
+            variant="quietDanger"
+            className="-my-1.5"
+            busy={cancel.isPending && cancel.variables.length > 1}
+            aria-label={bulk.label}
+            onClick={() => request(bulk)}
+          >
+            {filtered ? `Cancel ${rows.length}` : "Cancel all"}
+          </Button>
+        )
+      }
+    >
       {orders.isPending ? (
         <Loading />
       ) : orders.isError ? (
@@ -61,30 +84,22 @@ export function OpenOrdersList({ byCoin, coin }: { byCoin: Map<string, Market>; 
         <Empty>No open orders{marketName ? ` for ${marketName}` : ""}</Empty>
       ) : (
         <div className="flex flex-col gap-2">
-          <Segmented
-            label="Side filter"
-            value={side}
-            onChange={setSide}
-            options={[
-              { value: "all", label: `All ${count({ side: "all" })}` },
-              { value: "buy", label: `Buy ${count({ side: "buy" })}` },
-              { value: "sell", label: `Sell ${count({ side: "sell" })}` },
-            ]}
-          />
-          <Segmented
-            label="Kind filter"
-            value={kind}
-            onChange={setKind}
-            options={[
-              { value: "all", label: `All ${count({ kind: "all" })}` },
-              { value: "limit", label: `Limit ${count({ kind: "limit" })}` },
-              { value: "trigger", label: `Triggers ${count({ kind: "trigger" })}` },
-            ]}
-          />
-          {rows.length > 0 && (
-            <Button variant="danger" busy={cancel.isPending && cancel.variables.length > 1} onClick={() => request(scope(rows, marketName))}>
-              {scope(rows, marketName).label}
-            </Button>
+          {(showSide || showKind) && (
+            <div role="group" aria-label="Filter orders" className="flex flex-wrap items-center gap-1.5">
+              {showSide &&
+                (["buy", "sell"] as const).map((v) => (
+                  <FilterChip key={v} on={side === v} count={count({ side: v })} onToggle={() => setSide(side === v ? "all" : v)}>
+                    {v === "buy" ? "Buy" : "Sell"}
+                  </FilterChip>
+                ))}
+              {showSide && showKind && <span aria-hidden className="mx-0.5 h-4 w-px bg-line" />}
+              {showKind &&
+                (["limit", "trigger"] as const).map((v) => (
+                  <FilterChip key={v} on={kind === v} count={count({ kind: v })} onToggle={() => setKind(kind === v ? "all" : v)}>
+                    {v === "limit" ? "Limit" : "Trigger"}
+                  </FilterChip>
+                ))}
+            </div>
           )}
           {rows.length === 0 ? (
             <div className="flex flex-col items-center">
@@ -239,5 +254,24 @@ function CancelResult({ error, summary }: { error: Error | null; summary: Cancel
     <div className="mt-2">
       <Notice tone={summary.errors.length ? "warn" : "success"}>{describeCancels(summary)}</Notice>
     </div>
+  );
+}
+
+// Toggle chip: press to filter, press again to clear. Same shape as the
+// favorite-market chips on the Trade screen.
+function FilterChip({ on, count, onToggle, children }: { on: boolean; count: number; onToggle: () => void; children: ReactNode }) {
+  return (
+    <HButton
+      aria-pressed={on}
+      onClick={onToggle}
+      className={cx(
+        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-[color,border-color,background-color] duration-150",
+        "data-focus:outline-2 data-focus:outline-offset-2 data-focus:outline-accent data-active:scale-[0.96]",
+        on ? "border-accent bg-accent/10 text-accent" : "border-line text-muted data-hover:text-fg",
+      )}
+    >
+      {children}
+      <span className={cx("tabular-nums", on ? "text-accent/80" : "text-faint")}>{count}</span>
+    </HButton>
   );
 }
