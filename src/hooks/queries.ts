@@ -7,6 +7,7 @@ import { CCTP_CONFIG, fetchFeeQuote } from "@/lib/cctp";
 import { arbitrumBalances } from "@/lib/cctpClient";
 import { loadFavorites, toggleStoredFavorite } from "@/lib/favorites";
 import { loadPrefs } from "@/lib/prefs";
+import { withMasterKey, type Auth } from "@/lib/session";
 import { fetchDepositAddress, type UnitAsset } from "@/lib/unit";
 import { useUnlocked } from "./session";
 
@@ -156,20 +157,25 @@ export function usePrefs() {
 export const useAgents = () => useAccountQuery("agents", (n, user) => infoClient(n).extraAgents({ user }), HISTORY_MS);
 
 // Runs an exchange action with the active signer, then refreshes account data.
-export function useExchange<TArgs, TResult>(
-  action: (client: ReturnType<typeof exchangeClient>, args: TArgs) => Promise<TResult>,
-  opts: { userSigned?: boolean } = {},
-) {
-  const { config, secrets, signer } = useUnlocked();
+export function useExchange<TArgs, TResult>(action: (client: ReturnType<typeof exchangeClient>, args: TArgs) => Promise<TResult>) {
+  const { config, signer } = useUnlocked();
   const queryClient = useQueryClient();
-  const key = opts.userSigned ? secrets.masterKey : signer;
-  const client = useMemo(() => (key ? exchangeClient(config.network, key) : null), [config.network, key]);
+  const client = useMemo(() => exchangeClient(config.network, signer), [config.network, signer]);
 
   return useMutation({
-    mutationFn: (args: TArgs) => {
-      if (!client) throw new Error("This action needs the master key");
-      return action(client, args);
-    },
+    mutationFn: (args: TArgs) => action(client, args),
+    onSettled: () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "markets" }),
+  });
+}
+
+// A user-signed (master key) exchange action. The key is opened from the
+// vault with `auth` for this call only (withMasterKey), never read from the
+// session.
+export function useMasterAction<TArgs, TResult>(action: (client: ReturnType<typeof exchangeClient>, args: TArgs) => Promise<TResult>) {
+  const { config } = useUnlocked();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ auth, args }: { auth: Auth; args: TArgs }) => withMasterKey(auth, (key) => action(exchangeClient(config.network, key), args)),
     onSettled: () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "markets" }),
   });
 }

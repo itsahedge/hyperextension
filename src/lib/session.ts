@@ -1,5 +1,6 @@
 import { validateAccount, type AccountConfig } from "./account";
 import { assertPasskey, createPasskey } from "./passkey";
+import type { Hex } from "viem";
 import { configItem, lastActiveItem, unlockedItem, vaultItem, type UnlockedSession } from "./storage";
 import {
   addPasskeySlot,
@@ -28,7 +29,7 @@ export interface PasskeyInfo {
 export type SessionState =
   | { status: "empty" }
   | { status: "locked"; config: AccountConfig; passkeys: PasskeyInfo[] }
-  | { status: "unlocked"; config: AccountConfig; secrets: Secrets; passkeys: PasskeyInfo[] };
+  | { status: "unlocked"; config: AccountConfig; secrets: Secrets; hasMasterKey: boolean; passkeys: PasskeyInfo[] };
 
 export async function loadSession(): Promise<SessionState> {
   const [vault, config, unlocked] = await Promise.all([
@@ -51,7 +52,17 @@ export function deriveSession(
   const passkeys =
     vault.version === 2 ? vault.passkeys.map(({ credentialId, label, createdAt }) => ({ credentialId, label, createdAt })) : [];
   if (!unlocked) return { status: "locked", config, passkeys };
-  return { status: "unlocked", config: unlocked.config, secrets: unlocked.secrets, passkeys };
+  return { status: "unlocked", config: unlocked.config, secrets: unlocked.secrets, hasMasterKey: unlocked.hasMasterKey, passkeys };
+}
+
+// The part of the secrets the unlocked session holds. In API-wallet mode the
+// agent key signs trades and every master-key action (withdraw, deposit,
+// approving an API wallet) already re-authorizes, so the master key stays
+// sealed in the vault and is opened per action by withMasterKey instead of
+// sitting decrypted in session storage. In master mode it is the signer.
+export function sessionFor(config: AccountConfig, secrets: Secrets): UnlockedSession {
+  const { masterKey, ...rest } = secrets;
+  return { config, secrets: config.mode === "master" ? secrets : rest, hasMasterKey: Boolean(masterKey) };
 }
 
 export async function createVault(config: AccountConfig, secrets: Secrets, password: string) {
@@ -62,7 +73,7 @@ export async function createVault(config: AccountConfig, secrets: Secrets, passw
   // Activity first: an auto-lock check between the two writes must not see an
   // unlocked session with no recorded activity.
   await lastActiveItem.setValue(Date.now());
-  await unlockedItem.setValue({ config, secrets });
+  await unlockedItem.setValue(sessionFor(config, secrets));
 }
 
 // Recovers the DEK from any enrolled method. A v1 vault is upgraded in place
@@ -94,15 +105,18 @@ export async function unlock(auth: Auth) {
   const { vault, dek } = await authorize(auth);
   const secrets = await openSecrets(vault, dek);
   await lastActiveItem.setValue(Date.now());
-  await unlockedItem.setValue({ config, secrets });
+  await unlockedItem.setValue(sessionFor(config, secrets));
 }
 
-// Step-up check for sensitive actions while already unlocked. Recovering the
-// DEK proves the user holds the password or an enrolled passkey right now.
-// This guards against someone at an unlocked browser, not against code that
-// can already read session storage.
-export async function verify(auth: Auth) {
-  await authorize(auth);
+// Runs `use` with the master key opened from the vault for this one action.
+// Recovering the DEK proves the user holds the password or an enrolled
+// passkey right now (guards against someone at an unlocked browser), and the
+// key never enters session storage in API-wallet mode.
+export async function withMasterKey<T>(auth: Auth, use: (masterKey: Hex) => Promise<T>): Promise<T> {
+  const { vault, dek } = await authorize(auth);
+  const { masterKey } = await openSecrets(vault, dek);
+  if (!masterKey) throw new Error("This needs the master key, which is not stored in this browser");
+  return use(masterKey);
 }
 
 export async function lock() {
@@ -127,7 +141,13 @@ export async function updateVault(
   validateAccount(next.config, next.secrets);
   await vaultItem.setValue(await sealSecrets(vault, dek, next.secrets));
   await configItem.setValue(next.config);
-  await unlockedItem.setValue({ config: next.config, secrets: next.secrets });
+  await unlockedItem.setValue(sessionFor(next.config, next.secrets));
+}
+
+// Switching to master mode puts the master key in the session as the signer,
+// so it re-authorizes; switching to the API wallet needs no auth (updateConfig).
+export function setSigningMode(auth: Auth, mode: AccountConfig["mode"]) {
+  return updateVault(auth, (secrets, config) => ({ secrets, config: { ...config, mode } }));
 }
 
 export async function enrollPasskey(auth: Auth, label: string) {
@@ -145,9 +165,14 @@ export async function updateConfig(patch: Partial<AccountConfig>) {
   const [config, unlocked] = await Promise.all([configItem.getValue(), unlockedItem.getValue()]);
   if (!config) throw new Error("No account");
   const next = { ...config, ...patch };
-  if (unlocked) validateAccount(next, unlocked.secrets);
+  if (unlocked) {
+    if (next.mode === "master" && !unlocked.secrets.masterKey && unlocked.hasMasterKey) {
+      throw new Error("Switching to the master key needs your passkey or password");
+    }
+    validateAccount(next, unlocked.secrets);
+  }
   await configItem.setValue(next);
-  if (unlocked) await unlockedItem.setValue({ config: next, secrets: unlocked.secrets });
+  if (unlocked) await unlockedItem.setValue(sessionFor(next, unlocked.secrets));
 }
 
 export async function wipe() {

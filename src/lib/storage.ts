@@ -9,7 +9,11 @@ import type { VpnSettings } from "./vpn";
 // only the persisted copy that seeds the next unlock.
 export interface UnlockedSession {
   config: AccountConfig;
+  // What the session may hold: in API-wallet mode the master key stays sealed
+  // in the vault (session.sessionSecrets).
   secrets: Secrets;
+  // Whether the vault has a master key, even when the session does not.
+  hasMasterKey: boolean;
 }
 
 export interface Prefs {

@@ -10,8 +10,9 @@ import {
   removePasskey,
   unlock,
   updateConfig,
+  setSigningMode,
   updateVault,
-  verify,
+  withMasterKey,
   wipe,
   type SessionState,
 } from "./session";
@@ -161,14 +162,6 @@ describe("passkeys", () => {
     expect(await loadSession()).toMatchObject({ passkeys: [{ label: "Phone" }] });
   });
 
-  it("verify accepts a passkey or password and rejects a wrong password", async () => {
-    await createVault(config, { masterKey: MASTER }, "pw");
-    await enrollPasskey(pw("pw"), "Touch ID");
-    await expect(verify(passkey)).resolves.toBeUndefined();
-    await expect(verify(pw("pw"))).resolves.toBeUndefined();
-    await expect(verify(pw("bad"))).rejects.toBeInstanceOf(WrongPasswordError);
-  });
-
   it("updateVault via passkey keeps password and passkey slots valid", async () => {
     await createVault(config, { masterKey: MASTER }, "pw");
     await enrollPasskey(pw("pw"), "Touch ID");
@@ -176,10 +169,9 @@ describe("passkeys", () => {
     for (const auth of [passkey, pw("pw")]) {
       await lock();
       await unlock(auth);
-      expect(await loadSession()).toMatchObject({
-        config: { mode: "agent" },
-        secrets: { masterKey: MASTER, agentKey: AGENT },
-      });
+      expect(await loadSession()).toMatchObject({ config: { mode: "agent" }, secrets: { agentKey: AGENT }, hasMasterKey: true });
+      // Sealed in the vault, not in the session, in API-wallet mode.
+      expect(await withMasterKey(auth, async (k) => k)).toBe(MASTER);
     }
   });
 });
@@ -234,7 +226,57 @@ describe("mode switches are never observed half-applied", () => {
   it("toggling mode from settings", async () => {
     await createVault(config, { masterKey: MASTER, agentKey: AGENT }, "pw");
     expectConsistent(await statesDuring(() => updateConfig({ mode: "agent" })));
-    expectConsistent(await statesDuring(() => updateConfig({ mode: "master" })));
+    expectConsistent(await statesDuring(() => setSigningMode(pw("pw"), "master")));
+  });
+});
+
+describe("master key exposure in API-wallet mode", () => {
+  const sessionJson = async () => JSON.stringify(await fakeBrowser.storage.session.get());
+  const both = { masterKey: MASTER, agentKey: AGENT };
+  const agentConfig = { ...config, mode: "agent" as const };
+
+  it("keeps the master key out of session storage while trading with the API wallet", async () => {
+    await createVault(agentConfig, both, "pw");
+    expect(await sessionJson()).not.toContain(MASTER.slice(2));
+    expect(await loadSession()).toMatchObject({ status: "unlocked", hasMasterKey: true, secrets: { agentKey: AGENT } });
+
+    await lock();
+    await unlock(pw("pw"));
+    expect(await sessionJson()).not.toContain(MASTER.slice(2));
+
+    await updateVault(pw("pw"), (s, c) => ({ secrets: { ...s, vpnConf: "x" }, config: c }));
+    expect(await sessionJson()).not.toContain(MASTER.slice(2));
+    expect(await loadSession()).toMatchObject({ hasMasterKey: true, secrets: { agentKey: AGENT, vpnConf: "x" } });
+  });
+
+  it("holds the master key in master mode, where it is the signer", async () => {
+    await createVault(config, both, "pw");
+    expect(await loadSession()).toMatchObject({ hasMasterKey: true, secrets: { masterKey: MASTER } });
+    await updateConfig({ mode: "agent" });
+    expect(await sessionJson()).not.toContain(MASTER.slice(2));
+  });
+
+  it("withMasterKey hands out the key only after auth", async () => {
+    await createVault(agentConfig, both, "pw");
+    const use = vi.fn(async (key: string) => key);
+    await expect(withMasterKey(pw("wrong"), use)).rejects.toBeInstanceOf(WrongPasswordError);
+    expect(use).not.toHaveBeenCalled();
+    expect(await withMasterKey(pw("pw"), use)).toBe(MASTER);
+    await enrollPasskey(pw("pw"), "Touch ID");
+    expect(await withMasterKey(passkey, use)).toBe(MASTER);
+  });
+
+  it("withMasterKey refuses when no master key is stored", async () => {
+    await createVault({ ...agentConfig, address: addressOf(MASTER) }, { agentKey: AGENT }, "pw");
+    await expect(withMasterKey(pw("pw"), async () => "x")).rejects.toThrow(/master key/);
+  });
+
+  it("switching to master mode needs auth, since it loads the key into the session", async () => {
+    await createVault(agentConfig, both, "pw");
+    await expect(updateConfig({ mode: "master" })).rejects.toThrow(/passkey or password/);
+    await expect(setSigningMode(pw("wrong"), "master")).rejects.toBeInstanceOf(WrongPasswordError);
+    await setSigningMode(pw("pw"), "master");
+    expect(await loadSession()).toMatchObject({ config: { mode: "master" }, secrets: { masterKey: MASTER } });
   });
 });
 
