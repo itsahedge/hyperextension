@@ -1,18 +1,21 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { Badge, Button, Spinner, cx } from "@/components/ui";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { Badge, Button, Loading, Spinner, cx } from "@/components/ui";
 import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
 import { useRefetchWhenVpnConnects, useVpnState, useVpnSwitch } from "@/hooks/vpn";
 import { lock } from "@/lib/session";
-import { Activity } from "@/screens/Activity";
-import { Orders } from "@/screens/Orders";
 import { Portfolio } from "@/screens/Portfolio";
-import { Settings } from "@/screens/Settings";
 import { Setup } from "@/screens/Setup";
-import { Trade } from "@/screens/Trade";
 import { Unlock } from "@/screens/Unlock";
-import { Wallet } from "@/screens/Wallet";
+
+// Portfolio (the first screen) ships in the main chunk; the others load on
+// first visit, so opening the popup parses less.
+const Trade = lazy(() => import("@/screens/Trade").then((m) => ({ default: m.Trade })));
+const Orders = lazy(() => import("@/screens/Orders").then((m) => ({ default: m.Orders })));
+const Wallet = lazy(() => import("@/screens/Wallet").then((m) => ({ default: m.Wallet })));
+const Activity = lazy(() => import("@/screens/Activity").then((m) => ({ default: m.Activity })));
+const Settings = lazy(() => import("@/screens/Settings").then((m) => ({ default: m.Settings })));
 
 const TABS = [
   { id: "portfolio", label: "Portfolio", Screen: Portfolio },
@@ -127,7 +130,9 @@ function Shell() {
 
       <VpnBanner />
       <main className="min-h-0 flex-1 overflow-y-auto p-3">
-        <Screen />
+        <Suspense fallback={<Loading />}>
+          <Screen />
+        </Suspense>
       </main>
 
       <nav aria-label="Sections" className="grid shrink-0 grid-cols-6 border-t border-line">
