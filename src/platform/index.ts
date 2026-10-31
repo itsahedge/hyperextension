@@ -10,6 +10,7 @@ export const platform: Platform = {
     options ? storage.defineItem<T>(key, options) : storage.defineItem<T>(key)) as DefineItem,
   passkeyRpId: () => browser.runtime.id,
   storesMasterKey: true,
+  passwordless: false,
   vpn: "helper",
   route: (url) => url,
   screenLock: true,

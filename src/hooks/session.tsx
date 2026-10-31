@@ -34,6 +34,8 @@ export interface Unlocked {
   signer: ReturnType<typeof signerKey>;
   canUserSign: boolean;
   passkeys: PasskeyInfo[];
+  // False for a passkey-only vault (the web app's).
+  hasPassword: boolean;
 }
 
 // For screens rendered only while unlocked.
@@ -49,5 +51,6 @@ export function useUnlocked(): Unlocked {
     // mode it is opened from the vault per action (withMasterKey).
     canUserSign: state.hasMasterKey,
     passkeys: state.passkeys,
+    hasPassword: state.hasPassword,
   };
 }

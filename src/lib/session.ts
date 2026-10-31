@@ -5,6 +5,7 @@ import type { Hex } from "viem";
 import { configItem, lastActiveItem, unlockedItem, vaultItem, type UnlockedSession } from "./storage";
 import {
   addPasskeySlot,
+  createPasskeyVault as createPasskeyVaultData,
   createVault as createVaultData,
   migrateV1,
   openSecrets,
@@ -29,8 +30,15 @@ export interface PasskeyInfo {
 
 export type SessionState =
   | { status: "empty" }
-  | { status: "locked"; config: AccountConfig; passkeys: PasskeyInfo[] }
-  | { status: "unlocked"; config: AccountConfig; secrets: Secrets; hasMasterKey: boolean; passkeys: PasskeyInfo[] };
+  | { status: "locked"; config: AccountConfig; passkeys: PasskeyInfo[]; hasPassword: boolean }
+  | {
+      status: "unlocked";
+      config: AccountConfig;
+      secrets: Secrets;
+      hasMasterKey: boolean;
+      passkeys: PasskeyInfo[];
+      hasPassword: boolean;
+    };
 
 export async function loadSession(): Promise<SessionState> {
   const [vault, config, unlocked] = await Promise.all([
@@ -52,8 +60,17 @@ export function deriveSession(
   if (!vault || !config) return { status: "empty" };
   const passkeys =
     vault.version === 2 ? vault.passkeys.map(({ credentialId, label, createdAt }) => ({ credentialId, label, createdAt })) : [];
-  if (!unlocked) return { status: "locked", config, passkeys };
-  return { status: "unlocked", config: unlocked.config, secrets: unlocked.secrets, hasMasterKey: unlocked.hasMasterKey, passkeys };
+  // v1 vaults are password-only.
+  const hasPassword = vault.version === 1 || vault.password !== null;
+  if (!unlocked) return { status: "locked", config, passkeys, hasPassword };
+  return {
+    status: "unlocked",
+    config: unlocked.config,
+    secrets: unlocked.secrets,
+    hasMasterKey: unlocked.hasMasterKey,
+    passkeys,
+    hasPassword,
+  };
 }
 
 // The part of the secrets the unlocked session holds. In API-wallet mode the
@@ -77,7 +94,18 @@ function validateVault(config: AccountConfig, secrets: Secrets) {
 
 export async function createVault(config: AccountConfig, secrets: Secrets, password: string) {
   validateVault(config, secrets);
-  const { vault } = await createVaultData(secrets, password);
+  await saveNewVault(config, secrets, (await createVaultData(secrets, password)).vault);
+}
+
+// The web app's setup: the vault opens only with a passkey. Validates first,
+// so a bad account never leaves a passkey behind in the password manager.
+export async function createPasskeyVault(config: AccountConfig, secrets: Secrets, label: string) {
+  validateVault(config, secrets);
+  const passkey = await createPasskey(label);
+  await saveNewVault(config, secrets, (await createPasskeyVaultData(secrets, { ...passkey, label })).vault);
+}
+
+async function saveNewVault(config: AccountConfig, secrets: Secrets, vault: VaultV2) {
   await vaultItem.setValue(vault);
   await configItem.setValue(config);
   // Activity first: an auto-lock check between the two writes must not see an

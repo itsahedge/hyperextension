@@ -130,8 +130,8 @@ Open orders include stops and TP/SL; position TP/SL show as "Position" (Hyperliq
 
 ```
  secrets ──AES-GCM(DEK)──▶ vault data
- DEK ──wrapped by PBKDF2-SHA256(password, 600k)──▶ password slot   (always; recovery)
- DEK ──wrapped by HKDF(passkey PRF output)───────▶ passkey slot(s) (optional)
+ DEK ──wrapped by PBKDF2-SHA256(password, 600k)──▶ password slot   (extension: always, recovery; web app: none)
+ DEK ──wrapped by HKDF(passkey PRF output)───────▶ passkey slot(s) (extension: optional; web app: at least one)
 ```
 
 - The vault (`chrome.storage.local`) holds only ciphertext. Any slot recovers the same random data key (DEK).
@@ -139,6 +139,7 @@ Open orders include stops and TP/SL; position TP/SL show as "Position" (Hyperliq
 - **Auto-lock** (Settings → Security): locks after 5, 15 (default), 30, or 60 minutes without a click or keypress in the popup, or never. A background worker checks every 30 seconds via `chrome.alarms`, and opening the popup enforces an expired timeout immediately. With **Lock when the screen locks** on (default), `chrome.idle` reporting `locked` locks it at once.
 - **Withdrawal allowlist** (Settings → Withdrawal addresses): withdrawals can only go to this account's address or an allowlisted one; there is no free-text destination. The list is sealed inside the encrypted vault, so adding or removing an address requires a passkey or password, and the destination is rechecked against it at send time.
 - Withdrawals and key changes (approve/import API wallet, remove master key, add/remove passkeys) re-authorize with a passkey or the password even while unlocked.
+- A vault always keeps a way to unlock: removing the last passkey of a vault with no password is refused (`vault.removePasskeySlot`).
 - Permissions: `storage`, `alarms` and `idle` (auto-lock); host permissions only for `api.hyperliquid.xyz` and `api.hyperliquid-testnet.xyz`.
 
 ## Passkeys
@@ -195,6 +196,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4320
  vault, config   chrome.storage.local              localStorage ("hx:" keys)
  unlocked keys   chrome.storage.session            page memory (a reload locks)
  passkey RP ID   extension ID                      page hostname
+ unlock with     password, optional passkeys       passkey only (no password)
  master key      allowed                           refused (session.validateVault)
  auto-lock       background alarm + screen lock    timer while open + on tab return
  API calls       direct (chrome.proxy when VPN on) the Mac mini's relay, always
@@ -204,6 +206,7 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4320
 - **API wallet only.** The web app's vault can never hold a master key; every vault write refuses one. It trades but cannot withdraw, deposit, transfer with the master key, or approve API wallets.
 - **One API wallet per device.** Setup can generate a key on the device and show its address. In the extension, **Settings → API wallet → Approve an API wallet address** approves that address with the master key, so the key never leaves the device. Hyperliquid tracks nonces per signer and recommends a separate API wallet per frontend session. Approving under a name already in use replaces that wallet, so the form refuses this extension's own name and names any wallet it would replace. A short expiry (e.g. 30 days) limits a leaked device key.
 - **CSP.** Only bundled scripts run, and `connect-src` is `'self'`: the page can talk to the Mac mini and nothing else. hx-web sends the policy as a header (with `frame-ancestors 'none'`); the build also injects it as a meta tag.
+- **Passkey only.** Setup creates a passkey (Face ID, Touch ID) instead of asking for a password, and unlocking and key changes use it. The vault has no password slot, so it needs a provider with PRF support (see [Passkeys](#passkeys)), and Settings won't remove the last passkey. If every passkey is lost, reset and set up a new API wallet: the device only ever held a replaceable trading key. Vaults created with a password before this change keep working with it.
 - **Separate vaults and passkeys.** Each browser has its own encrypted vault; passkeys are scoped to the hostname, so they are enrolled separately from the extension's.
 - **Safari storage.** Safari may erase a site's storage after 7 days without a visit unless it is added to the Home Screen. If the vault is gone, generate and approve a new API wallet.
 

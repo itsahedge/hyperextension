@@ -14,11 +14,13 @@ export interface Secrets {
 // Envelope layout (v2):
 //
 //   secrets ──AES-GCM(DEK)──▶ data
-//   DEK ──AES-GCM(PBKDF2(password))──────▶ password slot   (always present: recovery)
-//   DEK ──AES-GCM(HKDF(passkey PRF out))─▶ passkey slot(s) (optional)
+//   DEK ──AES-GCM(PBKDF2(password))──────▶ password slot   (null in a passkey-only vault)
+//   DEK ──AES-GCM(HKDF(passkey PRF out))─▶ passkey slot(s)
 //
 // Any slot recovers the same random DEK, so adding or removing a passkey never
 // re-encrypts the secrets, and the password keeps working if a passkey is lost.
+// A vault always has at least one slot: a passkey-only vault (the web app's)
+// keeps at least one passkey, since losing them all would lock it for good.
 
 interface Sealed {
   iv: string;
@@ -44,7 +46,7 @@ export interface PasskeySlot {
 export interface VaultV2 {
   version: 2;
   data: Sealed;
-  password: PasswordSlot;
+  password: PasswordSlot | null;
   passkeys: PasskeySlot[];
 }
 
@@ -83,6 +85,8 @@ export class PasskeyMismatchError extends Error {
   }
 }
 
+type NewPasskey = { credentialId: string; prfSalt: Uint8Array; label: string; prfOutput: Uint8Array<ArrayBuffer> };
+
 export function randomBytes(n: number): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(new Uint8Array(n));
 }
@@ -102,7 +106,19 @@ export async function createVault(
   return { vault, dek };
 }
 
+export async function createPasskeyVault(secrets: Secrets, passkey: NewPasskey): Promise<{ vault: VaultV2; dek: DataKey }> {
+  const dek = randomBytes(DEK_BYTES);
+  const vault: VaultV2 = {
+    version: 2,
+    data: await seal(await aesKey(dek), encodeJson(secrets)),
+    password: null,
+    passkeys: [],
+  };
+  return { vault: await addPasskeySlot(vault, dek, passkey), dek };
+}
+
 export async function unwrapWithPassword(vault: VaultV2, password: string): Promise<DataKey> {
+  if (!vault.password) throw new Error("This vault has no password. Unlock it with your passkey.");
   const { salt, iterations, wrapped } = vault.password;
   const key = await pbkdf2Key(password, fromBase64(salt), iterations);
   return openOr(key, wrapped, () => new WrongPasswordError());
@@ -124,7 +140,7 @@ export async function sealSecrets(vault: VaultV2, dek: DataKey, secrets: Secrets
 export async function addPasskeySlot(
   vault: VaultV2,
   dek: DataKey,
-  passkey: { credentialId: string; prfSalt: Uint8Array; label: string; prfOutput: Uint8Array<ArrayBuffer> },
+  passkey: NewPasskey,
 ): Promise<VaultV2> {
   const slot: PasskeySlot = {
     credentialId: passkey.credentialId,
@@ -137,7 +153,11 @@ export async function addPasskeySlot(
 }
 
 export function removePasskeySlot(vault: VaultV2, credentialId: string): VaultV2 {
-  return { ...vault, passkeys: vault.passkeys.filter((p) => p.credentialId !== credentialId) };
+  const passkeys = vault.passkeys.filter((p) => p.credentialId !== credentialId);
+  if (!vault.password && passkeys.length === 0) {
+    throw new Error("This is the only passkey, and the vault has no password: removing it would lock the vault for good");
+  }
+  return { ...vault, passkeys };
 }
 
 export function passkeySalt(slot: PasskeySlot): Uint8Array<ArrayBuffer> {

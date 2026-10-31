@@ -7,8 +7,9 @@ import { platform } from "@/platform";
 export function Unlock() {
   const session = useSession();
   const passkeys = session.status === "locked" ? session.passkeys : [];
+  const hasPassword = session.status !== "locked" || session.hasPassword;
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(passkeys.length === 0);
+  const [showPassword, setShowPassword] = useState(hasPassword && passkeys.length === 0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -59,10 +60,10 @@ export function Unlock() {
           </Button>
         </>
       )}
-      {passkeys.length > 0 && (
+      {hasPassword && passkeys.length > 0 && (
         <Button onClick={() => switchTo(!showPassword)}>{showPassword ? "Use passkey" : "Use password"}</Button>
       )}
-      <Button onClick={() => setResetOpen(true)}>Forgot password? Reset</Button>
+      <Button onClick={() => setResetOpen(true)}>{hasPassword ? "Forgot password? Reset" : "Lost your passkey? Reset"}</Button>
       <ConfirmDialog
         open={resetOpen}
         onClose={() => setResetOpen(false)}
@@ -71,8 +72,9 @@ export function Unlock() {
         variant="danger"
         onConfirm={wipe}
       >
-        This erases the encrypted keys from this browser. Funds stay on Hyperliquid, but you need the private key to
-        sign again.
+        {platform.storesMasterKey
+          ? "This erases the encrypted keys from this browser. Funds stay on Hyperliquid, but you need the private key to sign again."
+          : "This erases the API wallet from this browser. Funds stay on Hyperliquid; set up again with a new API wallet and approve it in the extension."}
       </ConfirmDialog>
     </div>
   );

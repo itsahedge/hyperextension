@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeBrowser } from "wxt/testing/fake-browser";
 import { addressOf, signerKey, type AccountConfig } from "./account";
 import {
+  createPasskeyVault,
   createVault,
   deriveSession,
   enrollPasskey,
@@ -82,7 +83,7 @@ describe("session lifecycle", () => {
     expect(await loadSession()).toMatchObject({ status: "unlocked", secrets: { masterKey: MASTER }, passkeys: [] });
 
     await lock();
-    expect(await loadSession()).toEqual({ status: "locked", config, passkeys: [] });
+    expect(await loadSession()).toEqual({ status: "locked", config, passkeys: [], hasPassword: true });
 
     await expect(unlock(pw("nope"))).rejects.toBeInstanceOf(WrongPasswordError);
     await unlock(pw("pw"));
@@ -173,6 +174,49 @@ describe("passkeys", () => {
       // Sealed in the vault, not in the session, in API-wallet mode.
       expect(await withMasterKey(auth, async (k) => k)).toBe(MASTER);
     }
+  });
+});
+
+describe("passkey-only vault", () => {
+  const agentConfig: AccountConfig = { address: config.address, mode: "agent", network: "testnet" };
+
+  it("is created with a passkey, has no password, and unlocks with the passkey", async () => {
+    await createPasskeyVault(agentConfig, { agentKey: AGENT }, "iPhone");
+    expect(await loadSession()).toMatchObject({ status: "unlocked", hasPassword: false, passkeys: [{ label: "iPhone" }] });
+    expect(JSON.stringify(await vaultItem.getValue())).not.toContain(AGENT.slice(2));
+
+    await lock();
+    expect(await loadSession()).toMatchObject({ status: "locked", hasPassword: false, passkeys: [{ label: "iPhone" }] });
+    await expect(unlock(pw("anything"))).rejects.toThrow(/no password/);
+    await unlock(passkey);
+    expect(await loadSession()).toMatchObject({ status: "unlocked", secrets: { agentKey: AGENT } });
+  });
+
+  it("checks the account before prompting for a passkey", async () => {
+    await expect(createPasskeyVault(agentConfig, {}, "iPhone")).rejects.toThrow();
+    expect(authenticator.credentials.size).toBe(0);
+    expect(await vaultItem.getValue()).toBeNull();
+  });
+
+  it("refuses to remove the only passkey", async () => {
+    await createPasskeyVault(agentConfig, { agentKey: AGENT }, "iPhone");
+    const before = await vaultItem.getValue();
+    const state = await loadSession();
+    if (state.status !== "unlocked") throw new Error("expected unlocked");
+    await expect(removePasskey(passkey, state.passkeys[0]!.credentialId)).rejects.toThrow(/only passkey/);
+    expect(await vaultItem.getValue()).toEqual(before);
+  });
+
+  it("can drop its first passkey once a second is enrolled", async () => {
+    await createPasskeyVault(agentConfig, { agentKey: AGENT }, "iPhone");
+    await enrollPasskey(passkey, "Mac");
+    const state = await loadSession();
+    if (state.status !== "unlocked") throw new Error("expected unlocked");
+    await removePasskey(passkey, state.passkeys[0]!.credentialId);
+    expect(await loadSession()).toMatchObject({ passkeys: [{ label: "Mac" }] });
+    await lock();
+    await unlock(passkey);
+    expect(await loadSession()).toMatchObject({ status: "unlocked" });
   });
 });
 

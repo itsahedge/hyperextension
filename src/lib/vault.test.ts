@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addPasskeySlot,
+  createPasskeyVault,
   createVault,
   fromBase64,
   migrateV1,
@@ -49,7 +50,7 @@ describe("password slot", () => {
     const a = await createVault(secrets, "pw", FAST);
     const b = await createVault(secrets, "pw", FAST);
     expect(JSON.stringify(a.vault)).not.toContain(secrets.masterKey!.slice(2));
-    expect(a.vault.password.salt).not.toBe(b.vault.password.salt);
+    expect(a.vault.password!.salt).not.toBe(b.vault.password!.salt);
     expect(a.vault.data.ciphertext).not.toBe(b.vault.data.ciphertext);
     expect(toBase64(a.dek)).not.toBe(toBase64(b.dek));
   });
@@ -97,6 +98,37 @@ describe("passkey slots", () => {
     v = await sealSecrets(v, dek, { agentKey: secrets.agentKey });
     expect(await openSecrets(v, await unwrapWithPrf(v.passkeys[0]!, pk.prfOutput))).toEqual({ agentKey: secrets.agentKey });
     expect(await openSecrets(v, await unwrapWithPassword(v, "pw"))).toEqual({ agentKey: secrets.agentKey });
+  });
+});
+
+describe("passkey-only vault", () => {
+  const agentOnly: Secrets = { agentKey: secrets.agentKey };
+
+  it("opens with its passkey and has no password slot", async () => {
+    const pk = passkey("cred-a");
+    const { vault, dek } = await createPasskeyVault(agentOnly, pk);
+    expect(vault.password).toBeNull();
+    expect(vault.passkeys.map((p) => p.credentialId)).toEqual(["cred-a"]);
+    expect(toBase64(await unwrapWithPrf(vault.passkeys[0]!, pk.prfOutput))).toBe(toBase64(dek));
+    expect(await openSecrets(vault, dek)).toEqual(agentOnly);
+  });
+
+  it("refuses a password", async () => {
+    const { vault } = await createPasskeyVault(agentOnly, passkey("cred-a"));
+    await expect(unwrapWithPassword(vault, "anything")).rejects.toThrow(/no password/);
+  });
+
+  it("refuses to remove its last passkey, which is the only way to unlock it", async () => {
+    const { vault, dek } = await createPasskeyVault(agentOnly, passkey("cred-a"));
+    expect(() => removePasskeySlot(vault, "cred-a")).toThrow(/only passkey/);
+    const two = await addPasskeySlot(vault, dek, passkey("cred-b"));
+    expect(removePasskeySlot(two, "cred-a").passkeys.map((p) => p.credentialId)).toEqual(["cred-b"]);
+  });
+
+  it("removing the last passkey is fine while a password remains", async () => {
+    const { vault, dek } = await createVault(secrets, "pw", FAST);
+    const v = await addPasskeySlot(vault, dek, passkey("cred-a"));
+    expect(removePasskeySlot(v, "cred-a").passkeys).toEqual([]);
   });
 });
 
