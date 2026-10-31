@@ -1,4 +1,4 @@
-import { browser } from "#imports";
+import { platform } from "@/platform";
 import { randomBytes } from "./vault";
 
 // WebAuthn PRF extension shapes (WebAuthn Level 3 §10.1.4). Declared locally
@@ -23,8 +23,9 @@ export interface PasskeyRef {
 }
 
 // Chrome lets an extension use its own ID as the RP ID; the credential is then
-// scoped to the chrome-extension:// origin. The manifest `key` keeps the ID stable.
-const rpId = () => browser.runtime.id;
+// scoped to the chrome-extension:// origin. The manifest `key` keeps the ID
+// stable. The web app uses its hostname, so its passkeys are separate.
+const rpId = () => platform.passkeyRpId();
 
 export async function createPasskey(label: string): Promise<PasskeyRef & { prfOutput: Uint8Array<ArrayBuffer> }> {
   const prfSalt = randomBytes(32);
