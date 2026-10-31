@@ -28,8 +28,12 @@ export interface Platform {
   passkeyRpId(): string;
   // The web app keeps only an API wallet: it can trade but never withdraw.
   storesMasterKey: boolean;
-  // WireGuard helper over native messaging (extension only).
-  vpn: boolean;
+  // helper: the WireGuard helper over native messaging (extension).
+  // relay: the Mac mini's tunnel; every API call goes through its relay (web).
+  vpn: "helper" | "relay";
+  // The URL to call for an API URL: unchanged in the extension (chrome.proxy
+  // routes it), the Mac mini's relay on the web (platform/relay.ts).
+  route(url: string): string;
   // chrome.idle reports OS screen lock (extension only).
   screenLock: boolean;
   // Side panel button in the popup header (extension only).

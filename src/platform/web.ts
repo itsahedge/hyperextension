@@ -1,3 +1,4 @@
+import { relayUrl } from "./relay";
 import type { Platform } from "./types";
 import { createWebStorage } from "./webStorage";
 
@@ -15,7 +16,8 @@ export const platform: Platform = {
   defineItem: store.defineItem,
   passkeyRpId: () => window.location.hostname,
   storesMasterKey: false,
-  vpn: false,
+  vpn: "relay",
+  route: (url) => relayUrl(url, window.location),
   screenLock: false,
   sidePanel: false,
 };

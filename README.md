@@ -38,10 +38,12 @@ pnpm test        # vitest
 pnpm build       # production build in .output/chrome-mv3
 pnpm dev:web     # web app dev server on 127.0.0.1:4310
 pnpm build:web   # web app static build in .output/web
-pnpm preview:web # serve .output/web on 127.0.0.1:4310
+pnpm preview:web # serve .output/web on 127.0.0.1:4310 (proxies /relay and /api like dev:web)
+pnpm web:serve   # hx-web in the foreground on 127.0.0.1:4320, no VPN config (needs HX_DEV_LOGIN)
+pnpm web:install # install hx-web and the web build as a launchd agent (see Web app)
 ```
 
-`pnpm dev` writes to `.output/chrome-mv3-dev` and opens its own browser profile, so it does not share the vault from your normal Chrome. Run typecheck, test, build and build:web before opening a PR; there is no CI.
+`pnpm dev` writes to `.output/chrome-mv3-dev` and opens its own browser profile, so it does not share the vault from your normal Chrome. Run typecheck, test, build, build:web and vpn:test before opening a PR; there is no CI.
 
 Order math, the vault, sessions, and signing are pure modules under `src/lib` with unit tests. Exchange-facing tests run the real SDK against a fake transport and assert the exact signed payloads.
 
@@ -56,7 +58,7 @@ src/
   components/          shared UI: open orders, market filter, dialogs, spot balances
   hooks/               session context and TanStack Query hooks
   lib/                 vault, session, signing, markets, order planners, placement
-  apiOrigins.ts        every API origin: extension host_permissions and web app CSP
+  apiOrigins.ts        every API origin: extension host_permissions and the web relay's allowlist
 ```
 
 ## Signing modes
@@ -176,15 +178,15 @@ Then paste a wg-quick `.conf` (for example from your IVPN account) in Settings >
 
 ## Web app
 
-The same screens and `src/lib` code, built as a static site for your own devices. It runs on the Mac mini and is reached over Tailscale only; there is no backend, and each device talks to Hyperliquid directly.
+The same screens and `src/lib` code, built as a static site for your own devices and served by `hx-web` (`native/cmd/hx-web`) on the Mac mini, reached over Tailscale only. Devices never call an API directly: every Hyperliquid, Arbitrum, Circle and Unit request goes to the Mac mini's relay, which sends it on through the VPN (see [Web app VPN](#web-app-vpn)).
 
 ```bash
-pnpm build:web && pnpm preview:web               # 127.0.0.1:4310, loopback only
-tailscale serve --bg --https=8443 http://127.0.0.1:4310
+pnpm web:install    # build the web app and hx-web, start the launchd agent on 127.0.0.1:4320
+tailscale serve --bg --https=8443 http://127.0.0.1:4320
 # -> https://<mac-mini>.<tailnet>.ts.net:8443 (tailnet only; never Funnel)
 ```
 
-HTTPS is required: WebCrypto, passkeys and push need a secure origin, and a bare `http://100.x.y.z` is not one.
+`web:install` needs `HX_ALLOW_LOGIN` (your Tailscale login) and the KeePassXC settings in `scripts/hx-web.sh`. HTTPS is required: WebCrypto, passkeys and push need a secure origin, and a bare `http://100.x.y.z` is not one.
 
 `@/platform` (`src/platform/`) is the only seam. The extension build resolves it to `index.ts`; `vite.web.config.ts` aliases it to `web.ts`:
 
@@ -195,18 +197,42 @@ HTTPS is required: WebCrypto, passkeys and push need a secure origin, and a bare
  passkey RP ID   extension ID                      page hostname
  master key      allowed                           refused (session.validateVault)
  auto-lock       background alarm + screen lock    timer while open + on tab return
- VPN             WireGuard helper                  none (see below)
+ API calls       direct (chrome.proxy when VPN on) the Mac mini's relay, always
+ VPN             WireGuard helper (native host)    WireGuard on the Mac mini (hx-web)
 ```
 
 - **API wallet only.** The web app's vault can never hold a master key; every vault write refuses one. It trades but cannot withdraw, deposit, transfer with the master key, or approve API wallets.
-- **One API wallet per device.** Setup can generate a key on the device and show its address. In the extension, **Settings → API wallet → Approve an API wallet address** approves that address with the master key, so the key never leaves the device. Hyperliquid tracks nonces per signer and recommends a separate API wallet per frontend session. Approving under a name already in use replaces that wallet, so the form refuses this extension's own name and names any wallet it would replace.
-- **CSP.** The build injects a Content-Security-Policy: only bundled scripts run, and `connect-src` allows only `src/apiOrigins.ts`.
+- **One API wallet per device.** Setup can generate a key on the device and show its address. In the extension, **Settings → API wallet → Approve an API wallet address** approves that address with the master key, so the key never leaves the device. Hyperliquid tracks nonces per signer and recommends a separate API wallet per frontend session. Approving under a name already in use replaces that wallet, so the form refuses this extension's own name and names any wallet it would replace. A short expiry (e.g. 30 days) limits a leaked device key.
+- **CSP.** Only bundled scripts run, and `connect-src` is `'self'`: the page can talk to the Mac mini and nothing else. hx-web sends the policy as a header (with `frame-ancestors 'none'`); the build also injects it as a meta tag.
 - **Separate vaults and passkeys.** Each browser has its own encrypted vault; passkeys are scoped to the hostname, so they are enrolled separately from the extension's.
 - **Safari storage.** Safari may erase a site's storage after 7 days without a visit unless it is added to the Home Screen. If the vault is gone, generate and approve a new API wallet.
 
-### Planned: VPN for the web app
+### hx-web
 
-Not built; the VPN stays extension-only for now. The plan: run the existing Go WireGuard tunnel (`native/internal/vpn`) on the Mac mini and have the web app send its Hyperliquid, Arbitrum, Circle and Unit requests through a proxy on the Mac mini (reached via `tailscale serve`, bound to loopback like `native/internal/proxy`) instead of directly from each device. Trade-offs to settle first: every device would share the Mac mini's exit IP and Hyperliquid's per-IP limits (1200 REST weight per minute, 10 websocket connections), and the tunnel's kill switch would have to block the web app's requests, not fall back to direct.
+```
+browser ──https (tailscale serve)──▶ 127.0.0.1:4320 hx-web
+                                       /                 static build (.output/web)
+                                       /api/vpn/*        VPN switch and server list
+                                       /relay/<host>/…   API relay, websockets included
+                                                           off             -> Mac mini's own connection
+                                                           on, connected   -> WireGuard tunnel only
+                                                           on, not up      -> 503, nothing sent (kill switch)
+```
+
+- **Who gets in.** Every request needs the `Tailscale-User-Login` that `tailscale serve` adds, matching `HX_ALLOW_LOGIN`. Tailscale adds it to any tailnet request, including one a malicious site makes from your browser, so hx-web also refuses requests whose `Sec-Fetch-Site` is not same-origin, and the VPN switch accepts only JSON POSTs. It listens on loopback only (it refuses any other address); a process on the Mac mini itself can reach it and set the header, so it does not defend against local malware.
+- **What leaves.** The relay reaches exactly the hosts in `src/apiOrigins.ts` (`webhost.RelayHosts`; a Go test keeps them equal) on port 443, strips cookies, Origin, Referer, forwarding and Tailscale headers, drops upstream `Set-Cookie`, caps bodies at 1 MiB, and never logs bodies or paths beyond the host.
+- **What the Mac mini sees.** Tailscale's HTTPS ends at hx-web, which opens a new HTTPS connection upstream, so it sees requests in plaintext: signed actions and account data, never a private key. A signed action cannot be altered without invalidating its signature, and Hyperliquid's nonces stop replays.
+- **Shared limits.** All devices leave from one IP, so they share Hyperliquid's per-IP limits (1200 REST weight per minute, 10 websocket connections).
+- **Local development.** `HX_DEV_LOGIN=dev@localhost pnpm web:serve` runs hx-web in the foreground without a WireGuard config; `pnpm dev:web` (port 4310) proxies `/relay` and `/api` to it and sends `HX_DEV_LOGIN` as the identity.
+
+### Web app VPN
+
+The tunnel runs inside hx-web, reusing the extension helper's WireGuard code (`native/internal/vpn`: in-process netstack, exit-IP check against the direct IP, IVPN server list); `native/internal/webvpn` adds the switch.
+
+- **Config.** The wg-quick `.conf` lives in KeePassXC on the Mac mini, in the Notes of the entry named by `HX_KEEPASS_ENTRY`. `scripts/hx-web.sh` (run by launchd) reads it and pipes it to hx-web, which keeps it in memory only; the browser never sees or sends it. A separate IVPN WireGuard key for the Mac mini keeps it independent of the extension's. Without the entry, hx-web runs with the VPN unavailable.
+- **Switch.** Settings → VPN turns it on or off and picks an IVPN server, for every device at once. The choice is saved in `~/Library/Application Support/Hyperextension/web-vpn.json` and survives restarts: if it was on, the relay blocks until the tunnel is verified again.
+- **Kill switch.** While on, a request leaves through the tunnel or not at all. hx-web re-checks every 30 seconds and reconnects a tunnel that is down or has not handshaken for 3 minutes; requests stay blocked meanwhile.
+- **Off** means requests leave from the Mac mini's own connection, not from each device.
 
 ## No builder codes
 

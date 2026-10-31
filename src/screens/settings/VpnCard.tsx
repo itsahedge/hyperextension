@@ -1,17 +1,49 @@
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "@headlessui/react";
 import { useState } from "react";
 import { AuthorizeDialog } from "@/components/AuthorizeDialog";
-import { Button, Card, Notice, Spinner, errorMessage } from "@/components/ui";
+import { Button, Card, Loading, Notice, Spinner, errorMessage } from "@/components/ui";
 import { useUnlocked } from "@/hooks/session";
 import { useVpnServers, useVpnState, useVpnSwitch } from "@/hooks/vpn";
 import { fmtTime } from "@/lib/format";
 import { updateVault } from "@/lib/session";
-import { locationLabel, serverName, summarizeConf, type VpnExit, type VpnLocation } from "@/lib/vpn";
+import { locationLabel, serverName, summarizeConf, type ConfSummary, type VpnExit, type VpnLocation } from "@/lib/vpn";
+import { platform } from "@/platform";
 
 const where = (e: VpnExit) => [e.city, e.country].filter(Boolean).join(", ");
 const sameLocation = (a?: VpnLocation, b?: VpnLocation) => a?.publicKey === b?.publicKey && a?.host === b?.host;
 
 export function VpnCard() {
+  if (platform.vpn === "relay") return <RelayVpnCard />;
+  return <HelperVpnCard />;
+}
+
+// Web app: the tunnel and its config are on the Mac mini; this only flips
+// the switch and picks the server.
+function RelayVpnCard() {
+  const state = useVpnState();
+  return (
+    <Card title="VPN (WireGuard)">
+      <div className="flex flex-col gap-3">
+        <p className="text-[11px] text-faint">
+          Every Hyperliquid, Arbitrum, Circle and Unit request from this app goes through the Mac mini. With the VPN on it
+          leaves through the Mac mini's WireGuard tunnel; if the tunnel drops, requests are blocked, not sent from the Mac
+          mini's own IP. The WireGuard config stays on the Mac mini.
+        </p>
+        {state.isPending ? (
+          <Loading />
+        ) : state.isError ? (
+          <Notice tone="error">{errorMessage(state.error)}</Notice>
+        ) : state.data.configured ? (
+          <VpnControls summary={state.data.config ?? null} />
+        ) : (
+          <Notice tone="warn">No WireGuard config on the Mac mini. Add it to KeePassXC there (see the README), then restart hx-web.</Notice>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function HelperVpnCard() {
   const { secrets } = useUnlocked();
   const conf = secrets.vpnConf;
   return (
@@ -22,7 +54,7 @@ export function VpnCard() {
           visiting those sites use it too. If the VPN drops, those requests are blocked, not sent directly. Needs the
           VPN helper: run <code className="text-muted">pnpm vpn:install</code> once.
         </p>
-        {conf ? <VpnControls conf={conf} /> : <ConfEditor />}
+        {conf ? <VpnControls conf={conf} summary={confSummary(conf)} /> : <ConfEditor />}
       </div>
     </Card>
   );
@@ -87,7 +119,17 @@ function ConfEditor({ onDone }: { onDone?: () => void }) {
   );
 }
 
-function VpnControls({ conf }: { conf: string }) {
+function confSummary(conf: string): ConfSummary | null {
+  try {
+    return summarizeConf(conf);
+  } catch {
+    return null;
+  }
+}
+
+// conf: the extension's vault copy, sent to its helper; the web app has none
+// (the Mac mini holds it), and then the config cannot be replaced from here.
+function VpnControls({ conf, summary }: { conf?: string; summary: ConfSummary | null }) {
   const state = useVpnState();
   const servers = useVpnServers(true);
   const toggle = useVpnSwitch();
@@ -95,12 +137,6 @@ function VpnControls({ conf }: { conf: string }) {
   const [replacing, setReplacing] = useState(false);
   const [removing, setRemoving] = useState(false);
 
-  let summary: { address: string; endpoint: string } | null = null;
-  try {
-    summary = summarizeConf(conf);
-  } catch {
-    summary = null;
-  }
   if (replacing) return <ConfEditor onDone={() => setReplacing(false)} />;
 
   const s = state.data;
@@ -116,12 +152,16 @@ function VpnControls({ conf }: { conf: string }) {
       <div className="flex items-center gap-2 text-xs">
         <span className="text-muted">Config</span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{summary ? `${summary.address} · ${summary.endpoint}` : "unreadable"}</span>
-        <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
-          Replace
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => setRemoving(true)} disabled={s?.enabled}>
-          Remove
-        </Button>
+        {conf && (
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
+              Replace
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRemoving(true)} disabled={s?.enabled}>
+              Remove
+            </Button>
+          </>
+        )}
       </div>
 
       <Listbox value={location ?? null} onChange={(l: VpnLocation | null) => setPicked(l)} by={(a, b) => sameLocation(a ?? undefined, b ?? undefined)}>
@@ -197,7 +237,10 @@ function VpnControls({ conf }: { conf: string }) {
 }
 
 function VpnStatus({ state }: { state: NonNullable<ReturnType<typeof useVpnState>["data"]> }) {
-  if (!state.enabled) return <p className="text-xs text-muted">Off. Requests go directly from your connection.</p>;
+  if (!state.enabled) {
+    const from = platform.vpn === "relay" ? "the Mac mini's own connection" : "your connection";
+    return <p className="text-xs text-muted">Off. Requests go directly from {from}.</p>;
+  }
   if (state.connected && state.exit) {
     return (
       <Notice tone={state.unhealthy ? "warn" : "success"}>
