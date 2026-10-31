@@ -1,4 +1,4 @@
-import { storage } from "#imports";
+import { platform } from "@/platform";
 import type { AccountConfig } from "./account";
 import type { Secrets, StoredVault } from "./vault";
 import type { VpnSettings } from "./vpn";
@@ -27,21 +27,22 @@ export interface Prefs {
 
 // Stored prefs may predate newer fields; read through loadPrefs, which fills
 // defaults, and write through updatePrefs, which merges.
-export const prefsItem = storage.defineItem<Partial<Prefs>>("local:prefs");
+export const prefsItem = platform.defineItem<Partial<Prefs>>("local:prefs");
 
 // Timestamp (ms) of the last popup interaction while unlocked. Session-scoped
 // like the keys it guards.
-export const lastActiveItem = storage.defineItem<number>("session:lastActive");
+export const lastActiveItem = platform.defineItem<number>("session:lastActive");
 
 // Starred market coins per network; read through lib/favorites.
-export const favoritesItem = storage.defineItem<Partial<Record<"mainnet" | "testnet", string[]>>>("local:favorites");
+export const favoritesItem = platform.defineItem<Partial<Record<"mainnet" | "testnet", string[]>>>("local:favorites");
 
 // Whether the VPN should be on and which server; the WireGuard config itself
 // is sealed in the vault.
-export const vpnItem = storage.defineItem<VpnSettings>("local:vpn", { fallback: { enabled: false } });
+export const vpnItem = platform.defineItem<VpnSettings>("local:vpn", { fallback: { enabled: false } });
 
-export const vaultItem = storage.defineItem<StoredVault>("local:vault");
-export const configItem = storage.defineItem<AccountConfig>("local:config");
-// chrome.storage.session lives in memory and is cleared when the browser exits,
-// so decrypted keys never touch disk. Default access level excludes content scripts.
-export const unlockedItem = storage.defineItem<UnlockedSession>("session:unlocked");
+export const vaultItem = platform.defineItem<StoredVault>("local:vault");
+export const configItem = platform.defineItem<AccountConfig>("local:config");
+// Session storage lives in memory only, so decrypted keys never touch disk:
+// chrome.storage.session is cleared when the browser exits (its default access
+// level excludes content scripts); the web app's is cleared on page reload.
+export const unlockedItem = platform.defineItem<UnlockedSession>("session:unlocked");

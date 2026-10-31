@@ -5,27 +5,27 @@ import { AuthorizeDialog } from "@/components/AuthorizeDialog";
 import { Badge, Button, Card, ConfirmDialog, Empty, Loading, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
 import { useAgents, usePrefs } from "@/hooks/queries";
 import { useUnlocked } from "@/hooks/session";
-import { addressOf, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
+import { addressOf, parseAddress, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
+import { agentDaysError, agentName, agentNameError, checkApproveAddress, DAY_MS, MAX_AGENT_DAYS } from "@/lib/agents";
 import { AUTO_LOCK_CHOICES } from "@/lib/autolock";
 import { fmtTime, shortAddress } from "@/lib/format";
 import { updatePrefs } from "@/lib/prefs";
 import { addAllowed, MAX_LABEL, removeAllowed, type AllowedAddress } from "@/lib/withdraw";
 import { exchangeClient } from "@/lib/hyperliquid";
-import { enrollPasskey, lock, removePasskey, setSigningMode, updateConfig, updateVault, wipe, type Auth } from "@/lib/session";
+import { enrollPasskey, lock, removePasskey, setSigningMode, updateConfig, updateVault, wipe, withMasterKey, type Auth } from "@/lib/session";
+import { platform } from "@/platform";
 import { VpnCard } from "./settings/VpnCard";
 
-// Hyperliquid caps API wallet expiry at 180 days and names at 16 characters.
-const MAX_AGENT_DAYS = 180;
-const MAX_AGENT_NAME = 16;
-const DAY_MS = 86_400_000;
+// The web app holds no master key, so it has no withdrawals to allowlist.
+const appName = platform.kind === "web" ? "app" : "extension";
 
 export function Settings() {
   return (
     <div className="flex flex-col gap-3">
       <AccountCard />
       <PasskeyCard />
-      <WithdrawAllowlistCard />
-      <VpnCard />
+      {platform.storesMasterKey && <WithdrawAllowlistCard />}
+      {platform.vpn && <VpnCard />}
       <AgentCard />
       <SecurityCard />
     </div>
@@ -141,7 +141,14 @@ function AgentCard() {
           )}
         </div>
 
-        {canUserSign ? <CreateAgent /> : <Notice tone="info">Creating an API wallet needs the master key.</Notice>}
+        {canUserSign ? (
+          <>
+            <CreateAgent />
+            <ApproveAddress />
+          </>
+        ) : (
+          <Notice tone="info">Creating an API wallet needs the master key.</Notice>
+        )}
         <ImportAgent />
         {canUserSign && secrets.agentKey && <ForgetMaster />}
       </div>
@@ -157,10 +164,8 @@ function CreateAgent() {
   const queryClient = useQueryClient();
 
   const daysNum = Number(days);
-  const nameError =
-    name.trim().length === 0 || name.trim().length > MAX_AGENT_NAME ? `1 to ${MAX_AGENT_NAME} characters` : null;
-  const daysError =
-    !Number.isInteger(daysNum) || daysNum < 1 || daysNum > MAX_AGENT_DAYS ? `Whole days, 1 to ${MAX_AGENT_DAYS}` : null;
+  const nameError = agentNameError(name);
+  const daysError = agentDaysError(days);
 
   // updateVault authorizes first, then runs the on-chain approval, then saves:
   // a failed auth never approves, and a failed approval never stores the key.
@@ -171,7 +176,7 @@ function CreateAgent() {
     const validUntil = Date.now() + daysNum * DAY_MS;
     await updateVault(auth, async (secrets, config) => {
       if (!secrets.masterKey) throw new Error("Approving an API wallet needs the master key");
-      await exchangeClient(config.network, secrets.masterKey).approveAgent({ agentAddress, agentName: `${name.trim()} valid_until ${validUntil}` });
+      await exchangeClient(config.network, secrets.masterKey).approveAgent({ agentAddress, agentName: agentName(name, validUntil) });
       return { secrets: { ...secrets, agentKey }, config: { ...config, mode: "agent" } };
     });
     setDone(agentAddress);
@@ -200,6 +205,77 @@ function CreateAgent() {
         description="Signs an approveAgent action with the master key and stores the new key in your vault."
         confirmLabel="Approve"
         onAuthorized={create}
+      />
+    </div>
+  );
+}
+
+// Approves an API wallet whose key stays on another device: the web app
+// generates its own key and shows only the address. Signed with the master
+// key, opened from the vault for this one action.
+function ApproveAddress() {
+  const { config, secrets } = useUnlocked();
+  const agents = useAgents();
+  const queryClient = useQueryClient();
+  const [address, setAddress] = useState("");
+  const [name, setName] = useState("web");
+  const [days, setDays] = useState(String(MAX_AGENT_DAYS));
+  const [open, setOpen] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  const activeAgent = secrets.agentKey ? addressOf(secrets.agentKey) : null;
+  const check = agents.data
+    ? checkApproveAddress({ address, name, account: config.address, activeAgent, agents: agents.data })
+    : { error: null, replaces: null };
+  const fieldError = address ? check.error : null;
+  const nameError = agentNameError(name);
+  const daysError = agentDaysError(days);
+  const ready = Boolean(address && agents.data && !check.error && !nameError && !daysError);
+
+  const approve = async (auth: Auth) => {
+    const agentAddress = parseAddress(address);
+    const validUntil = Date.now() + Number(days) * DAY_MS;
+    await withMasterKey(auth, (key) =>
+      exchangeClient(config.network, key).approveAgent({ agentAddress, agentName: agentName(name, validUntil) }),
+    );
+    setDone(agentAddress);
+    setAddress("");
+    await queryClient.invalidateQueries({ queryKey: ["agents"] });
+  };
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <span className="text-xs font-medium">Approve an API wallet address</span>
+      <TextField
+        label="API wallet address"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="0x…"
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        error={fieldError}
+        hint="For a key that stays on another device, such as the web app's."
+      />
+      <div className="grid grid-cols-[1fr_6rem] gap-2">
+        <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} error={nameError} />
+        <TextField label="Valid for" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} suffix="days" error={daysError} />
+      </div>
+      {check.replaces && (
+        <Notice tone="warn">
+          "{name.trim()}" is in use by {shortAddress(check.replaces)}; approving replaces that API wallet.
+        </Notice>
+      )}
+      {done && <Notice tone="success">API wallet {shortAddress(done)} approved. This extension keeps its own.</Notice>}
+      <Button disabled={!ready} onClick={() => setOpen(true)}>
+        Approve address
+      </Button>
+      <AuthorizeDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Approve API wallet address"
+        description={`Signs an approveAgent action with the master key for ${address.trim()}. It can trade for this account but cannot withdraw.`}
+        confirmLabel="Approve"
+        onAuthorized={approve}
       />
     </div>
   );
@@ -460,32 +536,34 @@ function SecurityCard() {
           <p className="text-[11px] text-faint">
             {minutes === 0
               ? "Keys stay unlocked until you lock or the browser closes."
-              : `Locks ${minutes ? lockLabel(minutes) : "…"} after your last click or keypress in the popup; unlock again with a passkey or password.`}
+              : `Locks ${minutes ? lockLabel(minutes) : "…"} after your last click or keypress in the ${platform.kind === "web" ? "app" : "popup"}; unlock again with a passkey or password.`}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={prefs.data?.lockOnScreenLock ?? true}
-            disabled={!prefs.data}
-            onChange={(e) => void save({ lockOnScreenLock: e.target.checked })}
-            className="size-3.5 accent-(--color-accent)"
-          />
-          Lock when the screen locks
-        </label>
+        {platform.screenLock && (
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={prefs.data?.lockOnScreenLock ?? true}
+              disabled={!prefs.data}
+              onChange={(e) => void save({ lockOnScreenLock: e.target.checked })}
+              className="size-3.5 accent-(--color-accent)"
+            />
+            Lock when the screen locks
+          </label>
+        )}
         <div className="flex gap-2">
           <Button className="flex-1" onClick={() => void lock()}>
             Lock now
           </Button>
           <Button className="flex-1" variant="danger" onClick={() => setResetOpen(true)}>
-            Reset extension
+            Reset {appName}
           </Button>
         </div>
       </div>
       <ConfirmDialog
         open={resetOpen}
         onClose={() => setResetOpen(false)}
-        title="Reset extension"
+        title={`Reset ${appName}`}
         confirmLabel="Erase keys"
         variant="danger"
         onConfirm={wipe}

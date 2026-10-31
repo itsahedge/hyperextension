@@ -1,12 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { generatePrivateKey } from "viem/accounts";
 import { Button, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
 import { addressOf, parseAddress, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
 import { createVault } from "@/lib/session";
+import { platform } from "@/platform";
 
 export const MIN_PASSWORD = 8;
 
 export function Setup() {
-  const [mode, setMode] = useState<SignerMode>("master");
+  // The web app stores only an API wallet (session.validateVault).
+  const [mode, setMode] = useState<SignerMode>(platform.storesMasterKey ? "master" : "agent");
+  const [generated, setGenerated] = useState(false);
   const [network, setNetwork] = useState<Network>("mainnet");
   const [key, setKey] = useState("");
   const [account, setAccount] = useState("");
@@ -53,22 +57,30 @@ export function Setup() {
       <div>
         <h1 className="text-lg font-semibold">Set up Hyperextension</h1>
         <p className="mt-1 text-xs text-muted">
-          Keys are encrypted with your password and never leave this browser. The extension only talks to
-          Hyperliquid's API.
+          Keys are encrypted with your password and never leave this browser. {platform.kind === "web" ? "This app" : "The extension"}{" "}
+          only talks to Hyperliquid's API.
         </p>
       </div>
 
-      <Segmented
-        label="Signing key"
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: "master", label: "Master key" },
-          { value: "agent", label: "API wallet" },
-        ]}
-      />
+      {platform.storesMasterKey ? (
+        <Segmented
+          label="Signing key"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "master", label: "Master key" },
+            { value: "agent", label: "API wallet" },
+          ]}
+        />
+      ) : (
+        <Notice tone="info">
+          This app holds only an API wallet: it can trade but cannot withdraw or move funds off the account. Generate one
+          here and approve its address in the extension (Settings → API wallet → Approve an API wallet address), so the
+          key never leaves this device.
+        </Notice>
+      )}
 
-      {mode === "agent" && (
+      {mode === "agent" && platform.storesMasterKey && (
         <Notice tone="info">
           An API wallet can trade but cannot withdraw or move funds off the account. Approve it on Hyperliquid first, or
           import your master key now and create one later in Settings.
@@ -81,9 +93,29 @@ export function Setup() {
         autoComplete="off"
         spellCheck={false}
         value={key}
-        onChange={(e) => setKey(e.target.value)}
+        onChange={(e) => {
+          setKey(e.target.value);
+          setGenerated(false);
+        }}
         hint={keyAddress ? `Signer address ${keyAddress}` : "64 hex characters, with or without 0x"}
       />
+
+      {!platform.storesMasterKey && (
+        <Button
+          type="button"
+          onClick={() => {
+            setKey(generatePrivateKey());
+            setGenerated(true);
+          }}
+        >
+          Generate a new API wallet
+        </Button>
+      )}
+      {generated && keyAddress && (
+        <Notice tone="warn">
+          Approve {keyAddress} in the extension before trading. Until then Hyperliquid rejects its orders.
+        </Notice>
+      )}
 
       {mode === "agent" && (
         <TextField

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Button, ConfirmDialog, Notice, TextField, errorMessage } from "@/components/ui";
 import { useSession } from "@/hooks/session";
 import { unlock, wipe, type Auth } from "@/lib/session";
+import { platform } from "@/platform";
 
 export function Unlock() {
   const session = useSession();
@@ -65,7 +66,7 @@ export function Unlock() {
       <ConfirmDialog
         open={resetOpen}
         onClose={() => setResetOpen(false)}
-        title="Reset extension"
+        title={platform.kind === "web" ? "Reset app" : "Reset extension"}
         confirmLabel="Erase keys"
         variant="danger"
         onConfirm={wipe}

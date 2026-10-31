@@ -36,9 +36,12 @@ pnpm dev         # WXT dev build with hot reload, in a separate browser profile
 pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest
 pnpm build       # production build in .output/chrome-mv3
+pnpm dev:web     # web app dev server on 127.0.0.1:4310
+pnpm build:web   # web app static build in .output/web
+pnpm preview:web # serve .output/web on 127.0.0.1:4310
 ```
 
-`pnpm dev` writes to `.output/chrome-mv3-dev` and opens its own browser profile, so it does not share the vault from your normal Chrome. Run all three checks before opening a PR; there is no CI.
+`pnpm dev` writes to `.output/chrome-mv3-dev` and opens its own browser profile, so it does not share the vault from your normal Chrome. Run typecheck, test, build and build:web before opening a PR; there is no CI.
 
 Order math, the vault, sessions, and signing are pure modules under `src/lib` with unit tests. Exchange-facing tests run the real SDK against a fake transport and assert the exact signed payloads.
 
@@ -47,10 +50,13 @@ Order math, the vault, sessions, and signing are pure modules under `src/lib` wi
 ```
 src/
   entrypoints/popup/   popup entry, app shell, tab nav
+  web/                 web app entry (index.html, main.tsx)
+  platform/            what differs between extension and web app: storage, passkey RP ID, features
   screens/             one file per tab (Trade has a trade/ folder for the panel)
   components/          shared UI: open orders, market filter, dialogs, spot balances
   hooks/               session context and TanStack Query hooks
   lib/                 vault, session, signing, markets, order planners, placement
+  apiOrigins.ts        every API origin: extension host_permissions and web app CSP
 ```
 
 ## Signing modes
@@ -167,6 +173,40 @@ Then paste a wg-quick `.conf` (for example from your IVPN account) in Settings >
 - The proxy only accepts CONNECT to the routed hosts on port 443, so other local processes cannot use it as a general tunnel.
 - If another extension controls Chrome's proxy settings, turning the VPN on fails with an error instead of silently going direct.
 - Go checks: `pnpm vpn:test` (build, vet, race tests including an in-process WireGuard peer, golangci-lint).
+
+## Web app
+
+The same screens and `src/lib` code, built as a static site for your own devices. It runs on the Mac mini and is reached over Tailscale only; there is no backend, and each device talks to Hyperliquid directly.
+
+```bash
+pnpm build:web && pnpm preview:web               # 127.0.0.1:4310, loopback only
+tailscale serve --bg --https=8443 http://127.0.0.1:4310
+# -> https://<mac-mini>.<tailnet>.ts.net:8443 (tailnet only; never Funnel)
+```
+
+HTTPS is required: WebCrypto, passkeys and push need a secure origin, and a bare `http://100.x.y.z` is not one.
+
+`@/platform` (`src/platform/`) is the only seam. The extension build resolves it to `index.ts`; `vite.web.config.ts` aliases it to `web.ts`:
+
+```
+                 extension                         web app
+ vault, config   chrome.storage.local              localStorage ("hx:" keys)
+ unlocked keys   chrome.storage.session            page memory (a reload locks)
+ passkey RP ID   extension ID                      page hostname
+ master key      allowed                           refused (session.validateVault)
+ auto-lock       background alarm + screen lock    timer while open + on tab return
+ VPN             WireGuard helper                  none (see below)
+```
+
+- **API wallet only.** The web app's vault can never hold a master key; every vault write refuses one. It trades but cannot withdraw, deposit, transfer with the master key, or approve API wallets.
+- **One API wallet per device.** Setup can generate a key on the device and show its address. In the extension, **Settings → API wallet → Approve an API wallet address** approves that address with the master key, so the key never leaves the device. Hyperliquid tracks nonces per signer and recommends a separate API wallet per frontend session. Approving under a name already in use replaces that wallet, so the form refuses this extension's own name and names any wallet it would replace.
+- **CSP.** The build injects a Content-Security-Policy: only bundled scripts run, and `connect-src` allows only `src/apiOrigins.ts`.
+- **Separate vaults and passkeys.** Each browser has its own encrypted vault; passkeys are scoped to the hostname, so they are enrolled separately from the extension's.
+- **Safari storage.** Safari may erase a site's storage after 7 days without a visit unless it is added to the Home Screen. If the vault is gone, generate and approve a new API wallet.
+
+### Planned: VPN for the web app
+
+Not built; the VPN stays extension-only for now. The plan: run the existing Go WireGuard tunnel (`native/internal/vpn`) on the Mac mini and have the web app send its Hyperliquid, Arbitrum, Circle and Unit requests through a proxy on the Mac mini (reached via `tailscale serve`, bound to loopback like `native/internal/proxy`) instead of directly from each device. Trade-offs to settle first: every device would share the Mac mini's exit IP and Hyperliquid's per-IP limits (1200 REST weight per minute, 10 websocket connections), and the tunnel's kill switch would have to block the web app's requests, not fall back to direct.
 
 ## No builder codes
 

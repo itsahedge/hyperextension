@@ -8,6 +8,7 @@ import { lock } from "@/lib/session";
 import { Portfolio } from "@/screens/Portfolio";
 import { Setup } from "@/screens/Setup";
 import { Unlock } from "@/screens/Unlock";
+import { platform } from "@/platform";
 
 // Portfolio (the first screen) ships in the main chunk; the others load on
 // first visit, so opening the popup parses less.
@@ -120,15 +121,15 @@ function Shell() {
           {config.mode === "agent" ? "API wallet" : "Master"}
         </Badge>
         {config.network === "testnet" && <Badge tone="warn">Testnet</Badge>}
-        <VpnBadge />
+        {platform.vpn && <VpnBadge />}
         <RefreshButton />
-        {document.documentElement.dataset.surface === "popup" && <SidePanelButton />}
+        {platform.sidePanel && document.documentElement.dataset.surface === "popup" && <SidePanelButton />}
         <Button variant="ghost" size="sm" onClick={() => void lock()}>
           Lock
         </Button>
       </header>
 
-      <VpnBanner />
+      {platform.vpn && <VpnBanner />}
       <main className="min-h-0 flex-1 overflow-y-auto p-3">
         <Suspense fallback={<Loading />}>
           <Screen />
