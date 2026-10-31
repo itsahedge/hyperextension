@@ -55,6 +55,10 @@ export interface VpnState {
   lastHandshake?: number;
   unhealthy?: string;
   error?: string;
+  // Web app only: whether the Mac mini has a WireGuard config, and its
+  // summary (the config itself never leaves the Mac mini).
+  configured?: boolean;
+  config?: ConfSummary;
 }
 
 export type VpnMessage =

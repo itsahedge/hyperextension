@@ -1,5 +1,6 @@
 import { getAddress, isAddressEqual, parseUnits, type Address, type Hex } from "viem";
 import { arbitrum, arbitrumSepolia } from "viem/chains";
+import { platform } from "@/platform";
 import type { Network } from "./account";
 
 // USDC from Arbitrum to HyperCore via Circle CCTP (Hyperliquid docs: "CCTP is
@@ -90,7 +91,7 @@ export function parseFeeQuote(body: unknown): FeeQuote {
 }
 
 export async function fetchFeeQuote(cfg: CctpConfig): Promise<FeeQuote> {
-  const res = await fetch(`${cfg.irisUrl}/v2/burn/USDC/fees/${ARBITRUM_DOMAIN}/${HYPEREVM_DOMAIN}?forward=true&hyperCoreDeposit=true`);
+  const res = await fetch(platform.route(`${cfg.irisUrl}/v2/burn/USDC/fees/${ARBITRUM_DOMAIN}/${HYPEREVM_DOMAIN}?forward=true&hyperCoreDeposit=true`));
   if (!res.ok) throw new Error(`Circle fee API returned ${res.status}`);
   return parseFeeQuote(await res.json());
 }

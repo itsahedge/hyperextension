@@ -2,22 +2,24 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
-import { API_ORIGINS, WEBSOCKET_ORIGINS } from "./src/apiOrigins";
 
 // The web app: the same screens and lib as the extension, built as a static
-// site into .output/web and served from the Mac mini over Tailscale
-// (`tailscale serve`, tailnet only). "@/platform" resolves to the web platform
-// (localStorage + memory, no master key, no VPN) instead of the extension's.
+// site into .output/web and served by hx-web (native/cmd/hx-web) on the Mac
+// mini behind `tailscale serve`. "@/platform" resolves to the web platform
+// (localStorage + memory, no master key, API calls through the Mac mini's
+// relay) instead of the extension's.
 const src = fileURLToPath(new URL("./src", import.meta.url));
 
-// Like the extension's CSP: only bundled scripts run, and requests can only go
-// to the APIs the app uses, so injected code has nowhere to send a key.
-// Build only: the dev server injects an inline React refresh script.
+// Only bundled scripts run, and the page can only talk to its own origin:
+// every API call goes through hx-web's relay (platform/relay.ts), so injected
+// code has nowhere else to send a key. hx-web sends the same policy as a
+// header (webhost.contentSecurityPolicy, plus frame-ancestors). Build only:
+// the dev server injects an inline React refresh script.
 const csp = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  `connect-src 'self' ${[...API_ORIGINS, ...WEBSOCKET_ORIGINS].join(" ")}`,
+  "connect-src 'self'",
   "img-src 'self' data:",
   "object-src 'none'",
   "base-uri 'none'",
@@ -32,6 +34,11 @@ function contentSecurityPolicy(): Plugin {
   };
 }
 
+function devProxy() {
+  const target = { target: "http://127.0.0.1:4320", ws: true, headers: { "Tailscale-User-Login": process.env.HX_DEV_LOGIN ?? "" } };
+  return { "/relay": target, "/api": target };
+}
+
 export default defineConfig({
   root: "src/web",
   publicDir: "../../public",
@@ -43,7 +50,9 @@ export default defineConfig({
     ],
   },
   build: { outDir: "../../.output/web", emptyOutDir: true },
-  // Loopback only; Tailscale Serve is the one way in from other devices.
-  server: { host: "127.0.0.1", port: 4310, strictPort: true },
-  preview: { host: "127.0.0.1", port: 4310, strictPort: true },
+  // Loopback only. For local development, /relay and /api go to a running
+  // hx-web (pnpm web:serve), with HX_DEV_LOGIN standing in for the identity
+  // header tailscale serve would add.
+  server: { host: "127.0.0.1", port: 4310, strictPort: true, proxy: devProxy() },
+  preview: { host: "127.0.0.1", port: 4310, strictPort: true, proxy: devProxy() },
 });

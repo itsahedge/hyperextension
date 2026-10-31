@@ -1,6 +1,7 @@
 // Every origin the app sends requests to. The extension's host_permissions
-// (wxt.config.ts) and the web app's Content-Security-Policy connect-src
-// (vite.web.config.ts) are both built from these lists.
+// (wxt.config.ts) are built from this list, and the web app's relay on the
+// Mac mini may reach exactly these hosts (webhost.RelayHosts; a Go test keeps
+// the two equal).
 export const API_ORIGINS = [
   "https://api.hyperliquid.xyz",
   "https://api.hyperliquid-testnet.xyz",
@@ -13,6 +14,3 @@ export const API_ORIGINS = [
   "https://api.hyperunit.xyz",
   "https://api.hyperunit-testnet.xyz",
 ] as const;
-
-// Hyperliquid's websocket feeds (@nktkas/hyperliquid WebSocketTransport).
-export const WEBSOCKET_ORIGINS = ["wss://api.hyperliquid.xyz", "wss://api.hyperliquid-testnet.xyz"] as const;
