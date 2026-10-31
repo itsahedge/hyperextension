@@ -358,8 +358,10 @@ function ForgetMaster() {
 }
 
 function PasskeyCard() {
-  const { passkeys } = useUnlocked();
-  const [label, setLabel] = useState("This Mac");
+  const { passkeys, hasPassword } = useUnlocked();
+  const [label, setLabel] = useState(platform.kind === "web" ? "This device" : "This Mac");
+  // A passkey-only vault must keep one (vault.removePasskeySlot refuses too).
+  const isLastKey = !hasPassword && passkeys.length === 1;
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<{ credentialId: string; label: string } | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -368,8 +370,12 @@ function PasskeyCard() {
     <Card title="Passkeys">
       <div className="flex flex-col gap-3">
         <p className="text-[11px] text-faint">
-          Unlock with Touch ID or another passkey, and confirm withdrawals and key changes with it. Your password still
-          works as recovery. Needs a provider with PRF support, such as iCloud Keychain or Google Password Manager.
+          Unlock with Touch ID or another passkey, and confirm {platform.storesMasterKey ? "withdrawals and key changes" : "key changes"}{" "}
+          with it.{" "}
+          {hasPassword
+            ? "Your password still works as recovery."
+            : "There is no password, so the last passkey cannot be removed. If you lose every passkey, reset and set up a new API wallet."}{" "}
+          Needs a provider with PRF support, such as iCloud Keychain or Google Password Manager.
         </p>
         {passkeys.length === 0 ? (
           <Empty>No passkeys enrolled</Empty>
@@ -379,7 +385,14 @@ function PasskeyCard() {
               <li key={p.credentialId} className="flex items-center gap-2">
                 <span className="font-medium">{p.label}</span>
                 <span className="text-faint">added {fmtTime(p.createdAt)}</span>
-                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setRemoving(p)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  disabled={isLastKey}
+                  title={isLastKey ? "The only way to unlock this vault" : undefined}
+                  onClick={() => setRemoving(p)}
+                >
                   Remove
                 </Button>
               </li>
@@ -511,6 +524,7 @@ function WithdrawAllowlistCard() {
 const lockLabel = (m: number) => (m === 0 ? "Never" : m >= 60 ? `${m / 60}h` : `${m}m`);
 
 function SecurityCard() {
+  const { hasPassword } = useUnlocked();
   const [resetOpen, setResetOpen] = useState(false);
   const prefs = usePrefs();
   const queryClient = useQueryClient();
@@ -536,7 +550,7 @@ function SecurityCard() {
           <p className="text-[11px] text-faint">
             {minutes === 0
               ? "Keys stay unlocked until you lock or the browser closes."
-              : `Locks ${minutes ? lockLabel(minutes) : "…"} after your last click or keypress in the ${platform.kind === "web" ? "app" : "popup"}; unlock again with a passkey or password.`}
+              : `Locks ${minutes ? lockLabel(minutes) : "…"} after your last click or keypress in the ${platform.kind === "web" ? "app" : "popup"}; unlock again with ${hasPassword ? "a passkey or password" : "your passkey"}.`}
           </p>
         </div>
         {platform.screenLock && (

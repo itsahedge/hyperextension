@@ -28,6 +28,9 @@ export interface Platform {
   passkeyRpId(): string;
   // The web app keeps only an API wallet: it can trade but never withdraw.
   storesMasterKey: boolean;
+  // New vaults open with a passkey only, no password (web app). Losing the
+  // passkey there costs only an API wallet, which can be replaced.
+  passwordless: boolean;
   // helper: the WireGuard helper over native messaging (extension).
   // relay: the Mac mini's tunnel; every API call goes through its relay (web).
   vpn: "helper" | "relay";

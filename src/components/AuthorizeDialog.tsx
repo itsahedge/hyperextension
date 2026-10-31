@@ -23,6 +23,7 @@ export function AuthorizeDialog({
 }) {
   const session = useSession();
   const hasPasskey = session.status !== "empty" && session.passkeys.length > 0;
+  const hasPassword = session.status === "empty" || session.hasPassword;
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,7 +57,7 @@ export function AuthorizeDialog({
     void run({ kind: "password", password });
   };
 
-  const showPassword = !hasPasskey || usePassword;
+  const showPassword = hasPassword && (!hasPasskey || usePassword);
 
   return (
     <Modal open={open} onClose={close} title={title}>
@@ -89,10 +90,12 @@ export function AuthorizeDialog({
               {confirmLabel} with passkey
             </Button>
             <div className="flex justify-between">
-              <Button variant="ghost" size="sm" onClick={() => setUsePassword(true)} disabled={busy}>
-                Use password instead
-              </Button>
-              <Button variant="ghost" size="sm" onClick={close} disabled={busy}>
+              {hasPassword && (
+                <Button variant="ghost" size="sm" onClick={() => setUsePassword(true)} disabled={busy}>
+                  Use password instead
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" className="ml-auto" onClick={close} disabled={busy}>
                 Cancel
               </Button>
             </div>

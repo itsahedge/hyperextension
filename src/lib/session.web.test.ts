@@ -18,6 +18,7 @@ vi.mock("@/platform", async () => {
       defineItem: store.defineItem,
       passkeyRpId: () => "mini.example.ts.net",
       storesMasterKey: false,
+      passwordless: true,
       vpn: "relay",
       route: (url: string) => url,
       screenLock: false,

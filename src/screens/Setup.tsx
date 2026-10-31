@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { generatePrivateKey } from "viem/accounts";
 import { Button, Notice, Segmented, TextField, errorMessage } from "@/components/ui";
 import { addressOf, parseAddress, parsePrivateKey, type Network, type SignerMode } from "@/lib/account";
-import { createVault } from "@/lib/session";
+import { createPasskeyVault, createVault } from "@/lib/session";
 import { platform } from "@/platform";
 
 export const MIN_PASSWORD = 8;
@@ -16,6 +16,8 @@ export function Setup() {
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  // Passkey-only setup (web app): the passkey's name in Settings and the password manager.
+  const [passkeyLabel, setPasskeyLabel] = useState("This device");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -37,11 +39,13 @@ export function Setup() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (passwordError || !password) return;
+    if (!platform.passwordless && (passwordError || !password)) return;
     setBusy(true);
     try {
       const parsedKey = parsePrivateKey(key);
-      if (mode === "master") {
+      if (platform.passwordless) {
+        await createPasskeyVault({ address: parseAddress(account), mode, network }, { agentKey: parsedKey }, passkeyLabel.trim());
+      } else if (mode === "master") {
         await createVault({ address: addressOf(parsedKey), mode, network }, { masterKey: parsedKey }, password);
       } else {
         await createVault({ address: parseAddress(account), mode, network }, { agentKey: parsedKey }, password);
@@ -57,7 +61,7 @@ export function Setup() {
       <div>
         <h1 className="text-lg font-semibold">Set up Hyperextension</h1>
         <p className="mt-1 text-xs text-muted">
-          Keys are encrypted with your password and never leave this browser. {platform.kind === "web" ? "This app" : "The extension"}{" "}
+          Keys are encrypted with your {platform.passwordless ? "passkey" : "password"} and never leave this browser. {platform.kind === "web" ? "This app" : "The extension"}{" "}
           only talks to Hyperliquid's API.
         </p>
       </div>
@@ -139,21 +143,33 @@ export function Setup() {
         ]}
       />
 
-      <TextField
-        label="Password"
-        type="password"
-        autoComplete="new-password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <TextField
-        label="Confirm password"
-        type="password"
-        autoComplete="new-password"
-        value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
-        error={passwordError}
-      />
+      {platform.passwordless ? (
+        <TextField
+          label="Passkey name"
+          autoComplete="off"
+          value={passkeyLabel}
+          onChange={(e) => setPasskeyLabel(e.target.value)}
+          hint="Unlock with Face ID, Touch ID or another passkey; there is no password. Needs a provider with PRF support, such as iCloud Keychain or Google Password Manager. If you lose the passkey, reset and set up a new API wallet."
+        />
+      ) : (
+        <>
+          <TextField
+            label="Password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <TextField
+            label="Confirm password"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            error={passwordError}
+          />
+        </>
+      )}
 
       {error && <Notice tone="error">{error}</Notice>}
 
@@ -161,9 +177,13 @@ export function Setup() {
         type="submit"
         variant="primary"
         busy={busy}
-        disabled={!key || !password || !confirm || Boolean(passwordError) || (mode === "agent" && !account)}
+        disabled={
+          !key ||
+          (mode === "agent" && !account) ||
+          (platform.passwordless ? !passkeyLabel.trim() : !password || !confirm || Boolean(passwordError))
+        }
       >
-        Encrypt and save
+        {platform.passwordless ? "Create passkey and save" : "Encrypt and save"}
       </Button>
     </form>
   );

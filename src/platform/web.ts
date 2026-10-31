@@ -16,6 +16,7 @@ export const platform: Platform = {
   defineItem: store.defineItem,
   passkeyRpId: () => window.location.hostname,
   storesMasterKey: false,
+  passwordless: true,
   vpn: "relay",
   route: (url) => relayUrl(url, window.location),
   screenLock: false,
