@@ -214,7 +214,7 @@ This is a personal tool: no order carries a Hyperliquid builder code (the per-or
 
 ## Notes
 
-- **Dependency release delay.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, so pnpm refuses package versions published less than 7 days ago (including transitive ones). To take an urgent fix sooner, add the package to `minimumReleaseAgeExclude` for that install.
+- **Dependency release delay.** `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, so pnpm refuses package versions published less than 7 days ago (including transitive ones). To take an urgent fix sooner, add the package to `minimumReleaseAgeExclude` for that install. Until 2026-11-05 the same file overrides `rolldown` to 1.2.15: the locked 1.2.16 (2026-10-29) was inside the window, so pnpm refused every lockfile change; remove the override once 1.2.16 is old enough.
 - **viem is pinned to `2.57.11`.** viem `2.57.12` rejects EIP-712 struct names containing `:`, and Hyperliquid's user-signed types are named like `HyperliquidTransaction:Withdraw`, so withdraw, transfers, and API wallet approval fail to sign. `src/lib/signing.test.ts` fails if an upgrade reintroduces this.
 - **Max size per side** comes from `activeAssetData.maxTradeSzs`. Hyperliquid does not document the index order; buy-then-sell is inferred from live data and only sizes the slider and MAX. The exchange validates every order.
 - **TWAP duration** is capped at 24 hours by the SDK's request schema, although Hyperliquid's docs allow up to 7 days.

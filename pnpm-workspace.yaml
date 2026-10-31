@@ -2,3 +2,9 @@
 # or broken releases are usually caught and pulled within days; this extension
 # holds private keys, so new versions wait out that window.
 minimumReleaseAge: 10080
+
+# rolldown 1.2.16 (2026-10-29, via vite) is inside the release window above,
+# and pnpm then refuses any lockfile change. 1.2.15 satisfies vite's ~1.2.14.
+# Remove after 2026-11-05, when 1.2.16 is old enough.
+overrides:
+  rolldown: 1.2.15
