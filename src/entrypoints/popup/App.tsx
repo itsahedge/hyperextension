@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Badge, Button, Loading, Spinner, cx } from "@/components/ui";
+import { Badge, Button, Loading, Spinner, cx, errorMessage } from "@/components/ui";
 import { useActivityTracker } from "@/hooks/activity";
 import { useSession, useUnlocked } from "@/hooks/session";
 import { useRefetchWhenVpnConnects, useVpnState, useVpnSwitch } from "@/hooks/vpn";
@@ -186,6 +186,14 @@ function VpnBanner() {
   const toggle = useVpnSwitch();
   useRefetchWhenVpnConnects(vpn.data?.connected);
   const s = vpn.data;
+  // The web app reaches every API through the Mac mini; without it nothing loads.
+  if (platform.vpn === "relay" && vpn.isError && !s) {
+    return (
+      <div className="shrink-0 border-b border-line bg-down/10 px-3 py-2 text-xs text-down">
+        Cannot reach the Mac mini, so no requests can go out. {errorMessage(vpn.error)}
+      </div>
+    );
+  }
   if (!s?.enabled || s.connected) return null;
   if (s.connecting || toggle.isPending) {
     return (
@@ -195,13 +203,15 @@ function VpnBanner() {
     );
   }
   const conf = secrets.vpnConf;
+  // The web app's config lives on the Mac mini, so it can always ask it to reconnect.
+  const canReconnect = Boolean(conf) || (platform.vpn === "relay" && s.configured);
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line bg-down/10 px-3 py-2 text-xs">
       <span className="min-w-0 flex-1 text-down">
         VPN is down, so Hyperliquid, Arbitrum, Circle and Unit requests are blocked.
         {s.error && <span className="block text-[11px] text-muted">{s.error}</span>}
       </span>
-      {conf && (
+      {canReconnect && (
         <Button size="sm" onClick={() => toggle.mutate({ on: true, conf, location: s.location })}>
           Reconnect
         </Button>

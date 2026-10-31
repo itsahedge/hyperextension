@@ -1,5 +1,6 @@
 import { createPublicClient, createWalletClient, http, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { platform } from "@/platform";
 import type { Network } from "./account";
 import {
   assertDepositSafe,
@@ -15,7 +16,7 @@ import { randomBytes } from "./vault";
 
 function publicClient(network: Network) {
   const cfg = CCTP_CONFIG[network];
-  return createPublicClient({ chain: cfg.chain, transport: http(cfg.rpcUrl) });
+  return createPublicClient({ chain: cfg.chain, transport: http(platform.route(cfg.rpcUrl)) });
 }
 
 export async function arbitrumBalances(network: Network, owner: Address) {
@@ -37,7 +38,7 @@ export async function submitDeposit(network: Network, masterKey: Hex, plan: Depo
   assertDepositSafe(cfg, plan, account.address);
 
   const client = publicClient(network);
-  const wallet = createWalletClient({ account, chain: cfg.chain, transport: http(cfg.rpcUrl) });
+  const wallet = createWalletClient({ account, chain: cfg.chain, transport: http(platform.route(cfg.rpcUrl)) });
 
   // The token's EIP-712 domain, read from the contract rather than assumed.
   const [name, version, balance] = await Promise.all([
