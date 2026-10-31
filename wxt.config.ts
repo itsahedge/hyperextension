@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
+import { API_ORIGINS } from "./src/apiOrigins";
 
 export default defineConfig({
   srcDir: "src",
@@ -14,17 +15,7 @@ export default defineConfig({
     // alarms + idle: background auto-lock on inactivity and on screen lock.
     // proxy + nativeMessaging: the WireGuard VPN helper (native/) and routing to it.
     permissions: ["storage", "alarms", "idle", "proxy", "nativeMessaging"],
-    host_permissions: [
-      "https://api.hyperliquid.xyz/*",
-      "https://api.hyperliquid-testnet.xyz/*",
-      // USDC deposits via Circle CCTP: Arbitrum RPC and Circle's fee API.
-      "https://arb1.arbitrum.io/*",
-      "https://sepolia-rollup.arbitrum.io/*",
-      "https://iris-api.circle.com/*",
-      "https://iris-api-sandbox.circle.com/*",
-      // Unit Protocol deposit addresses (BTC, ETH, SOL and others).
-      "https://api.hyperunit.xyz/*",
-      "https://api.hyperunit-testnet.xyz/*",
-    ],
+    // The VPN routes exactly these hosts (lib/vpn.ts routedHosts).
+    host_permissions: API_ORIGINS.map((origin) => `${origin}/*`),
   },
 });

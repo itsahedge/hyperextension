@@ -1,3 +1,4 @@
+import { platform } from "@/platform";
 import { validateAccount, type AccountConfig } from "./account";
 import { assertPasskey, createPasskey } from "./passkey";
 import type { Hex } from "viem";
@@ -65,8 +66,17 @@ export function sessionFor(config: AccountConfig, secrets: Secrets): UnlockedSes
   return { config, secrets: config.mode === "master" ? secrets : rest, hasMasterKey: Boolean(masterKey) };
 }
 
-export async function createVault(config: AccountConfig, secrets: Secrets, password: string) {
+// Every vault write checks what it may hold on this platform: the web app
+// keeps only an API wallet, so a master key never reaches its storage.
+function validateVault(config: AccountConfig, secrets: Secrets) {
+  if (secrets.masterKey && !platform.storesMasterKey) {
+    throw new Error("This app stores only an API wallet. Keep the master key in the extension.");
+  }
   validateAccount(config, secrets);
+}
+
+export async function createVault(config: AccountConfig, secrets: Secrets, password: string) {
+  validateVault(config, secrets);
   const { vault } = await createVaultData(secrets, password);
   await vaultItem.setValue(vault);
   await configItem.setValue(config);
@@ -138,7 +148,7 @@ export async function updateVault(
   if (!config) throw new Error("No account");
   const { vault, dek } = await authorize(auth);
   const next = await change(await openSecrets(vault, dek), config);
-  validateAccount(next.config, next.secrets);
+  validateVault(next.config, next.secrets);
   await vaultItem.setValue(await sealSecrets(vault, dek, next.secrets));
   await configItem.setValue(next.config);
   await unlockedItem.setValue(sessionFor(next.config, next.secrets));

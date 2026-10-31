@@ -12,7 +12,10 @@
     "test": "vitest run",
     "vpn:install": "bash scripts/install-vpn-host.sh",
     "vpn:test": "cd native && go build ./... && go vet ./... && go test -race -shuffle=on ./... && golangci-lint run --timeout 5m",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build:web": "vite build --config vite.web.config.ts",
+    "preview:web": "vite preview --config vite.web.config.ts"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.10",
@@ -27,9 +30,11 @@
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
     "@wxt-dev/module-react": "^1.2.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
+    "vite": "8.3.5",
     "vitest": "^5.0.5",
     "wxt": "^0.21.5"
   }

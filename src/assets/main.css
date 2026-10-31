@@ -41,6 +41,25 @@
     height: 100%;
   }
 
+  /* The web app: full height, one column, phone or desktop. */
+  html[data-surface="web"],
+  html[data-surface="web"] body {
+    height: 100dvh;
+  }
+  html[data-surface="web"] #root {
+    height: 100%;
+    max-width: 640px;
+    margin-inline: auto;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* iOS zooms into inputs smaller than 16px on focus. */
+  @media (pointer: coarse) {
+    html[data-surface="web"] :is(input, select, textarea) {
+      font-size: 16px;
+    }
+  }
+
   body {
     @apply bg-bg text-fg font-sans text-[13px] antialiased;
     color-scheme: dark;
