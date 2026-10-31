@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* Scan all of src/ for classes. Tailwind's automatic detection starts at the
+   Vite root, which is src/web for the web build (vite.web.config.ts), so
+   without this the screens' classes are never generated there. */
+@source "..";
 
 @theme {
   --color-bg: oklch(0.165 0.012 255);
