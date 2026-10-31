@@ -50,16 +50,47 @@ export function Chevron() {
   );
 }
 
+// On/off option with a checkbox, so it reads as a control and its state
+// does not rely on color alone.
 export function Toggle({ on, onChange, children, disabled }: { on: boolean; onChange: (v: boolean) => void; children: ReactNode; disabled?: boolean }) {
   return (
     <button
       type="button"
-      aria-pressed={on}
+      role="switch"
+      aria-checked={on}
       disabled={disabled}
       onClick={() => onChange(!on)}
       className={cx(
-        "rounded px-2 py-1 text-xs font-medium transition-colors duration-150 disabled:opacity-40",
-        on ? "bg-accent/15 text-accent" : "text-muted hover:text-fg",
+        "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-xs font-medium whitespace-nowrap transition-[color,border-color,background-color] duration-150 disabled:opacity-40",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        on ? "border-accent/60 bg-accent/10 text-accent" : "border-line text-muted hover:border-faint hover:text-fg",
+      )}
+    >
+      <span aria-hidden className={cx("flex size-3.5 items-center justify-center rounded-[3px] border", on ? "border-accent bg-accent text-accent-fg" : "border-faint")}>
+        {on && (
+          <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="m2.5 6.5 2.25 2.25L9.5 3.75" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      {children}
+    </button>
+  );
+}
+
+// Small shortcut that fills in a value (Bid, Mid, 15m); `on` marks the
+// value currently in use.
+export function Chip({ children, onClick, on = false, title }: { children: ReactNode; onClick: () => void; on?: boolean; title?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={on}
+      className={cx(
+        "inline-flex h-5 items-center rounded border px-1.5 text-[10px] font-medium transition-[color,border-color,background-color] duration-150",
+        "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
+        on ? "border-accent/60 bg-accent/10 text-accent" : "border-line text-muted hover:border-faint hover:text-fg",
       )}
     >
       {children}
@@ -195,9 +226,10 @@ export function SkewSlider({ label, value, onChange, lowLabel, highLabel }: { la
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between text-[11px]">
         <span className="text-muted">{label}</span>
-        <button type="button" onClick={() => onChange(0)} className="tabular-nums text-fg hover:text-accent" title="Reset to even">
-          {text}
-        </button>
+        <span className="flex items-center gap-1.5">
+          <span className="tabular-nums text-fg">{text}</span>
+          {value !== 0 && <Chip onClick={() => onChange(0)} title="Reset to even">Reset</Chip>}
+        </span>
       </div>
       <input
         type="range"

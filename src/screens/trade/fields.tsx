@@ -6,17 +6,13 @@ import type { Market } from "@/lib/markets";
 import { MAX_SCALE_ORDERS, MIN_SCALE_ORDERS, type ScaleRung } from "@/lib/scale";
 import { MAX_SWARM_LOTS, MIN_SWARM_LOTS } from "@/lib/swarm";
 import { TWAP_MAX_MINUTES, TWAP_MIN_MINUTES } from "@/lib/twap";
-import { NumberBox, SkewSlider, Toggle } from "./controls";
+import { Chip, NumberBox, SkewSlider, Toggle } from "./controls";
 
 type Set = (patch: Partial<PanelState>) => void;
 type FieldProps = { s: PanelState; set: Set; market: Market; book?: { bid: number; ask: number } };
 
 const mid = (m: Market) => m.midPx ?? m.markPx;
-const quick = (label: string, onClick: () => void) => (
-  <button type="button" onClick={onClick} className="text-[10px] text-accent hover:underline">
-    {label}
-  </button>
-);
+const quick = (label: string, onClick: () => void) => <Chip onClick={onClick}>{label}</Chip>;
 
 export function LimitFields({ s, set, market, book }: FieldProps) {
   return (
@@ -26,7 +22,7 @@ export function LimitFields({ s, set, market, book }: FieldProps) {
       onChange={(price) => set({ price })}
       placeholder={fmtPrice(mid(market))}
       action={
-        <span className="flex gap-2">
+        <span className="flex gap-1">
           {book && book.bid > 0 && quick("Bid", () => set({ price: String(book.bid) }))}
           {quick("Mid", () => set({ price: String(mid(market)) }))}
           {book && book.ask > 0 && quick("Ask", () => set({ price: String(book.ask) }))}
@@ -221,9 +217,9 @@ export function TwapFields({ s, set }: FieldProps) {
         action={
           <span className="flex gap-1.5">
             {DURATIONS.map((d) => (
-              <button key={d} type="button" onClick={() => set({ minutes: d })} className={cx("text-[10px] hover:text-accent", s.minutes === d ? "text-accent" : "text-faint")}>
+              <Chip key={d} on={s.minutes === d} onClick={() => set({ minutes: d })}>
                 {d >= 60 ? `${d / 60}h` : `${d}m`}
-              </button>
+              </Chip>
             ))}
           </span>
         }
