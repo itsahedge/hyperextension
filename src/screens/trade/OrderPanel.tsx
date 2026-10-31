@@ -178,7 +178,7 @@ export function OrderPanel({
         <div className="flex flex-wrap gap-1.5 border-t border-line pt-2">
           {POST_TYPES.includes(s.type) && (
             <Toggle on={s.post} onChange={(post) => set({ post })}>
-              Post
+              Post only
             </Toggle>
           )}
           {isPerp && (
@@ -192,6 +192,11 @@ export function OrderPanel({
             </Toggle>
           )}
         </div>
+        {POST_TYPES.includes(s.type) && (
+          <p className="-mt-1 text-[10px] text-faint">
+            Post only cancels any order that would fill immediately, so every order rests on the book as a maker.
+          </p>
+        )}
         {tpslAllowed && s.tpsl && <TpSlFields s={s} set={set} refPx={refPx} limitEntry={s.type === "limit"} isBuy={isBuy} />}
 
         {overMax && (
