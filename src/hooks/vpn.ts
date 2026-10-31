@@ -1,8 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import type { VpnLocation, VpnMessage, VpnReply, VpnState } from "@/lib/vpn";
+import { relayVpnRequest, type VpnRequest } from "@/lib/vpnRelay";
+import { platform } from "@/platform";
 
-async function send<T>(message: VpnMessage): Promise<T> {
+// The extension's switch is its background worker (VpnController, with the
+// .conf from the vault); the web app's is the Mac mini (lib/vpnRelay).
+async function send<T>(request: VpnRequest): Promise<T> {
+  if (platform.vpn === "relay") return relayVpnRequest<T>(request);
+  if (request.vpn === "up" && !request.conf) throw new Error("No VPN config in the vault");
+  const message = request as VpnMessage;
   let reply: VpnReply<T> | undefined;
   try {
     reply = (await browser.runtime.sendMessage(message)) as VpnReply<T> | undefined;
@@ -55,7 +62,7 @@ export function useVpnServers(enabled: boolean) {
 export function useVpnSwitch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (m: { on: true; conf: string; location?: VpnLocation } | { on: false }) =>
+    mutationFn: (m: { on: true; conf?: string; location?: VpnLocation } | { on: false }) =>
       send<VpnState>(m.on ? { vpn: "up", conf: m.conf, location: m.location } : { vpn: "down" }),
     onSuccess: async (state) => {
       queryClient.setQueryData(["vpn"], state);

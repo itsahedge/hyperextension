@@ -1,4 +1,5 @@
 import { getAddress, type Address } from "viem";
+import { platform } from "@/platform";
 import type { Network } from "./account";
 
 // Unit Protocol deposit addresses (docs.hyperunit.xyz). GET /gen returns a
@@ -143,7 +144,7 @@ export async function verifyDepositResponse(network: Network, asset: UnitAsset, 
 
 export async function fetchDepositAddress(network: Network, asset: UnitAsset, destination: Address): Promise<UnitDepositAddress> {
   const dst = getAddress(destination);
-  const res = await fetch(`${UNIT_API[network]}/gen/${asset.chain}/hyperliquid/${encodeURIComponent(asset.id)}/${dst}`);
+  const res = await fetch(platform.route(`${UNIT_API[network]}/gen/${asset.chain}/hyperliquid/${encodeURIComponent(asset.id)}/${dst}`));
   const body = await res.json().catch(() => null);
   if (res.status === 403 && !body) {
     throw new Error("Unit refused the request (HTTP 403). Unit blocks access from prohibited jurisdictions.");

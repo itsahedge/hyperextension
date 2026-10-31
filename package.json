@@ -15,7 +15,9 @@
     "postinstall": "wxt prepare",
     "dev:web": "vite --config vite.web.config.ts",
     "build:web": "vite build --config vite.web.config.ts",
-    "preview:web": "vite preview --config vite.web.config.ts"
+    "preview:web": "vite preview --config vite.web.config.ts",
+    "web:serve": "bash scripts/web-serve.sh",
+    "web:install": "bash scripts/install-web.sh"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.10",
