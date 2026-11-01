@@ -237,6 +237,18 @@ The tunnel runs inside hx-web, reusing the extension helper's WireGuard code (`n
 - **Kill switch.** While on, a request leaves through the tunnel or not at all. hx-web re-checks every 30 seconds and reconnects a tunnel that is down or has not handshaken for 3 minutes; requests stay blocked meanwhile.
 - **Off** means requests leave from the Mac mini's own connection, not from each device.
 
+## Price alerts (in progress)
+
+A Mac mini service, `hx-alerts`, will watch Hyperliquid prices and message a Discord channel when an alert fires. It will later place server-side TP/SL closes, so it runs apart from `hx-web` (the part your devices reach) and will be the only process to hold that key. Built so far, as Go libraries with tests; the service, API, Discord delivery and Alerts tab come next:
+
+- `native/internal/hlfeed`: one websocket subscription (`fastAssetCtxs`) carries the mark and mid price of every market (perps, spot `@107`, HIP-3 `xyz:NVDA`; about 2,000 at once), about once a second. It pings every 30 s (Hyperliquid drops a silent connection after 60 s), reconnects with backoff and resubscribes. The feed counts as up only while prices arrive: 30 s without one closes the connection, reports it down, and redials, so nothing acts on old prices.
+- `native/internal/alerts`: rules (coin, mark or mid price, above or below a level; optional repeat with a rearm gap, hold time, expiry, note) and the engine that decides when they fire.
+  - An alert fires whenever the price is at or past its level, not only on a crossing seen live. After a restart, a feed outage or a resume there is no earlier price to cross from, and an alert (later, a stop) must not be skipped; such a fire is flagged `alreadyBeyond`.
+  - A repeating alert rearms only after the price goes back past the level by its rearm gap, so it can't fire on every tick around the level. A hold time restarts after any feed outage.
+  - State is one JSON file (mode 0600), written to a temporary file and renamed over the old one. A fire is recorded on its rule and queued in an outbox in the same write, so a crash before delivery neither loses nor repeats it. Delivered fires go to a JSON-lines history.
+
+Checks: `pnpm vpn:test` covers both packages, the feed against a fake Hyperliquid server (reconnect, resubscribe, stale feed, pings, bad payloads). `go test -tags live -run Live ./internal/hlfeed/` reads live mainnet prices.
+
 ## No builder codes
 
 This is a personal tool: no order carries a Hyperliquid builder code (the per-order `builder` field that routes a fee to a third party), and the app never approves builder fees or sets referrals. All orders go through `submitOrders` in `src/lib/placement.ts`; `src/lib/orders.test.ts` asserts that no signed order, TP/SL, scale, swarm, or TWAP payload contains a builder field and scans the source for builder or referral calls.
